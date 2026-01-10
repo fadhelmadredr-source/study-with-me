@@ -5,3 +5,4 @@ Pillow
 gTTS
 streamlit-lottie
 requests
+streamlit-mic-recorder
