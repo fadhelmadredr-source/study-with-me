@@ -4,7 +4,8 @@ from PIL import Image
 import google.generativeai as genai
 import io
 from gtts import gTTS
-import time  # مكتبة الوقت للمؤقت
+import time
+from datetime import datetime, timedelta # مكتبات الوقت الجديدة
 
 # --- 1. تصميم الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
@@ -17,10 +18,34 @@ custom_css = """
     .stButton>button { background-color: #f0f2f6; color: #31333F; border-radius: 8px; border: 1px solid #d6d6d6; }
     .stButton>button:hover { background-color: #e0e2e6; }
     a { color: #0066cc !important; text-decoration: none; }
-    /* تنسيق العداد */
-    .timer-box {
-        font-size: 40px; font-weight: bold; text-align: center; color: #ff4b4b;
-        background-color: #f0f0f0; padding: 10px; border-radius: 10px; margin-bottom: 10px;
+    
+    /* تنسيق عداد الاستراحة الكبير */
+    .break-timer {
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: rgba(0,0,0,0.9);
+        color: white;
+        padding: 50px;
+        border-radius: 20px;
+        font-size: 80px;
+        font-weight: bold;
+        z-index: 9999;
+        text-align: center;
+        width: 80%;
+    }
+    .break-title { font-size: 30px; color: #ffcc00; display: block; margin-bottom: 20px; }
+    
+    /* تنسيق عداد الدراسة الصغير */
+    .study-timer-box {
+        border: 2px solid #4CAF50;
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        padding: 10px;
+        border-radius: 10px;
+        text-align: center;
+        font-weight: bold;
+        margin-bottom: 10px;
     }
 </style>
 """
@@ -31,6 +56,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pdf_images" not in st.session_state:
     st.session_state.pdf_images = None
+if "study_end_time" not in st.session_state:
+    st.session_state.study_end_time = None # لحفظ وقت انتهاء الدراسة
 
 # --- 3. القائمة الجانبية ---
 with st.sidebar:
@@ -41,42 +68,67 @@ with st.sidebar:
     
     api_key = st.text_input("مفتاح Gemini API:", type="password")
 
-    # --- ميزة المؤقت (الجديدة) ---
+    # --- نظام المؤقت الذكي ---
     st.markdown("---")
     st.subheader("⏱️ مؤقت التركيز")
     
-    # اختيار نوع المؤقت (دراسة أو راحة)
-    timer_mode = st.radio("الوضع:", ("دراسة 📖", "استراحة ☕"), horizontal=True)
+    # التحقق: هل هناك جلسة دراسة نشطة؟
+    now = datetime.now()
+    active_study = False
     
-    # تحديد الوقت (بالدقائق)
-    if timer_mode == "دراسة 📖":
-        minutes = st.slider("مدة الدراسة (دقيقة):", 10, 180, 120) # الافتراضي ساعتين
-    else:
-        minutes = st.slider("مدة الاستراحة (دقيقة):", 5, 60, 30) # الافتراضي نص ساعة
-
-    if st.button("ابدأ المؤقت ⏳"):
-        # مكان عرض العداد
-        timer_placeholder = st.empty()
-        bar = st.progress(0)
-        
-        total_seconds = minutes * 60
-        
-        for i in range(total_seconds):
+    if st.session_state.study_end_time:
+        if now < st.session_state.study_end_time:
             # حساب الوقت المتبقي
-            time_left = total_seconds - i
-            mins, secs = divmod(time_left, 60)
-            timer_text = f"{mins:02d}:{secs:02d}"
+            time_left = st.session_state.study_end_time - now
+            mins, secs = divmod(int(time_left.total_seconds()), 60)
+            st.markdown(f"""
+            <div class='study-timer-box'>
+                📚 وضع الدراسة نشط<br>
+                باقي: {mins} دقيقة و {secs} ثانية
+            </div>
+            """, unsafe_allow_html=True)
+            active_study = True
+            if st.button("إنهاء الجلسة ⏹️"):
+                st.session_state.study_end_time = None
+                st.rerun()
+        else:
+            # انتهى الوقت
+            st.session_state.study_end_time = None
+            st.success("⏰ انتهت جلسة الدراسة! حان وقت الراحة.")
+            st.balloons()
+            st.rerun()
             
-            # تحديث الشاشة
-            timer_placeholder.markdown(f"<div class='timer-box'>{timer_text}</div>", unsafe_allow_html=True)
-            bar.progress((i + 1) / total_seconds)
-            time.sleep(1) # انتظار ثانية
-            
-        # عند انتهاء الوقت
-        timer_placeholder.markdown("<div class='timer-box'>⏰ انتهى الوقت!</div>", unsafe_allow_html=True)
-        bar.progress(100)
-        st.balloons() # احتفال
-        st.success("عاشت ايدك! كملت الجلسة بنجاح.")
+    if not active_study:
+        timer_mode = st.radio("الوضع:", ("دراسة 📖", "استراحة ☕"), horizontal=True)
+        
+        if timer_mode == "دراسة 📖":
+            minutes = st.slider("مدة الدراسة (دقيقة):", 10, 180, 60)
+            if st.button("ابدأ التركيز 🚀"):
+                # هنا نستخدم الطريقة الغير مجمدة
+                st.session_state.study_end_time = now + timedelta(minutes=minutes)
+                st.rerun()
+                
+        else: # وضع الاستراحة
+            minutes = st.slider("مدة الاستراحة (دقيقة):", 1, 60, 15)
+            if st.button("ابدأ الاستراحة 💤"):
+                # هنا نستخدم الطريقة المجمدة (Blocking Loop)
+                placeholder = st.empty()
+                total_sec = minutes * 60
+                
+                for i in range(total_sec):
+                    left = total_sec - i
+                    m, s = divmod(left, 60)
+                    # عرض شاشة سوداء تغطي الموقع
+                    placeholder.markdown(f"""
+                    <div class='break-timer'>
+                        <span class='break-title'>☕ خذ استراحة، لا تشتغل!</span>
+                        {m:02d}:{s:02d}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    time.sleep(1) # تجميد النظام ثانية بثانية
+                
+                placeholder.empty()
+                st.success("انتهت الاستراحة! ارجع للدراسة 💪")
 
     # --- باقي الإعدادات ---
     st.markdown("---")
@@ -174,4 +226,4 @@ if prompt := st.chat_input("اسألني..."):
                 resp = get_gemini_response(f"بأسلوب {explanation_style}: {prompt}", st.session_state.pdf_images)
                 st.markdown(resp)
         st.session_state.messages.append({"role": "assistant", "content": resp})
-        st.rerun()
+        st.rerun() # تحديث الصفحة لتحديث عداد الدراسة
