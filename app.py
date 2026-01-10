@@ -33,6 +33,15 @@ custom_css = """
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 8px rgba(0,0,0,0.15); color: white; }
     
+    /* تنسيق البطاقات (Flashcards) */
+    .streamlit-expanderHeader {
+        background-color: #ffffff;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
+        font-weight: bold;
+        color: #1a73e8;
+    }
+    
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px; background-color: #ffffff; padding: 10px; border-radius: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
@@ -83,7 +92,7 @@ with st.sidebar:
             api_key = st.secrets["GEMINI_API_KEY"]
             genai.configure(api_key=api_key)
             
-            # محاولة كشف الموديلات تلقائياً
+            # كشف الموديلات تلقائياً
             available_models = []
             for m in genai.list_models():
                 if 'generateContent' in m.supported_generation_methods:
@@ -102,6 +111,17 @@ with st.sidebar:
     name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
     if name_input: st.session_state.student_name = name_input
     
+    # --- قسم الأدوات الذكية (الجديد) ---
+    st.markdown("---")
+    st.write("🧠 **أدوات ذكية:**")
+    if st.button("🃏 اصنع بطاقات مراجعة"):
+        if st.session_state.pdf_images or st.session_state.text_content:
+            st.session_state.messages.append({"role": "user", "content": "اريد بطاقات مراجعة (Flashcards) للمحتوى."})
+            # سنعالج هذا الطلب في الأسفل
+            st.session_state.trigger_flashcards = True 
+        else:
+            st.toast("⚠️ ارفع ملف أو نص أولاً!", icon="📂")
+
     st.markdown("---")
     # المؤقت
     now = datetime.now()
@@ -150,7 +170,7 @@ with st.sidebar:
     chat_history_text = f"مراجعة: {st.session_state.student_name}\nالتاريخ: {datetime.now().strftime('%Y-%m-%d')}\n\n"
     for msg in st.session_state.messages:
         role = "المعلم" if msg["role"] == "assistant" else st.session_state.student_name
-        content = str(msg["content"]).replace("||SPLIT||", "\n--- الحلول ---\n")
+        content = str(msg["content"]).replace("||SPLIT||", "\n--- الحلول ---\n").replace("||FLASH||", "")
         chat_history_text += f"[{role}]:\n{content}\n{'='*30}\n"
     st.download_button("📥 تحميل الملخص (TXT)", chat_history_text, f"summary_{st.session_state.student_name}.txt")
 
@@ -192,6 +212,7 @@ def text_to_audio(text):
     try:
         if not text or len(text.strip()) == 0: return None
         clean = text.replace("*", "").replace("#", "").replace("-", "")
+        clean = clean.replace("||FLASH||", "").replace("||SPLIT||", "")
         tts = gTTS(text=clean, lang='ar')
         fp = io.BytesIO()
         tts.write_to_fp(fp)
@@ -215,7 +236,6 @@ else:
                 st.session_state.text_content = None
                 st.session_state.content_type = "image"
                 if st.session_state.pdf_images:
-                    # الأمر الأولي
                     prompt = f"أنا {st.session_state.student_name}. اشرح لي الصور بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
                     resp = get_gemini_response(prompt, st.session_state.pdf_images, is_images=True)
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
@@ -229,18 +249,59 @@ else:
                     st.session_state.text_content = txt_input
                     st.session_state.pdf_images = None
                     st.session_state.content_type = "text"
-                    # الأمر الأولي
                     prompt = f"أنا {st.session_state.student_name}. اشرح لي هذا النص بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
                     resp = get_gemini_response(prompt, txt_input, is_images=False)
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
 
-    # --- 7. الشات المطور (Fix) ---
+    # --- معالجة طلب البطاقات (Flashcards Logic) ---
+    if "trigger_flashcards" in st.session_state and st.session_state.trigger_flashcards:
+        with st.spinner("جاري صناعة البطاقات... 🃏"):
+            flash_prompt = """
+            استخرج أهم 5 مصطلحات وتعاريفها من المحتوى.
+            المطلوب: يجب أن تكون الإجابة بصيغة قائمة مفصولة بـ ||FLASH||.
+            مثال:
+            المايتوكندريا || بيوت الطاقة في الخلية
+            النواة || مركز التحكم في الخلية
+            
+            فقط المصطلحات والتعاريف، بدون مقدمات.
+            """
+            if st.session_state.content_type == "image":
+                resp = get_gemini_response(flash_prompt, st.session_state.pdf_images, is_images=True)
+            else:
+                context = f"النص: {st.session_state.text_content}\n\n{flash_prompt}"
+                resp = get_gemini_response(context, "", is_images=False)
+            
+            st.session_state.messages.append({"role": "assistant", "content": resp, "is_flashcard": True})
+            st.session_state.trigger_flashcards = False # Reset
+            st.rerun()
+
+    # --- 7. الشات وعرض الرسائل ---
     for i, msg in enumerate(st.session_state.messages):
         role = msg["role"]
         with st.chat_message(role):
-            # اذا الرسالة تحتوي على فاصل، نعرضها مقسومة
-            if msg.get("is_split") or "||SPLIT||" in str(msg["content"]):
+            # 1. عرض البطاقات التعليمية
+            if msg.get("is_flashcard"):
+                st.markdown("### 🃏 بطاقات المراجعة السريعة")
+                lines = msg["content"].split('\n')
+                for line in lines:
+                    if "||" in line:
+                        try:
+                            term, definition = line.split("||")
+                            # تنظيف النص
+                            term = term.replace("FLASH", "").replace("|", "").strip()
+                            definition = definition.replace("FLASH", "").replace("|", "").strip()
+                            if term and definition:
+                                with st.expander(f"📌 {term}"):
+                                    st.info(definition)
+                        except: pass
+                # خيار سماع البطاقات
+                if st.button("🔊 اقرأ البطاقات", key=f"aud_{i}"):
+                     aud = text_to_audio(msg["content"].replace("||", " تعني "))
+                     if aud: st.audio(aud, format='audio/mp3')
+
+            # 2. عرض الأسئلة والحلول المخفية
+            elif msg.get("is_split") or "||SPLIT||" in str(msg["content"]):
                 parts = msg["content"].split("||SPLIT||")
                 st.markdown(parts[0])
                 if st.button("🔊 استمع", key=f"aud_{i}"):
@@ -248,13 +309,15 @@ else:
                     if aud: st.audio(aud, format='audio/mp3')
                 with st.expander("👁️ الحل"):
                     if len(parts) > 1: st.info(parts[1])
+            
+            # 3. عرض الشات العادي
             else:
                 st.markdown(msg["content"])
                 if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
                      aud = text_to_audio(msg["content"])
                      if aud: st.audio(aud, format='audio/mp3')
 
-    if prompt := st.chat_input("اسألني أو اطلب المزيد من الأسئلة..."):
+    if prompt := st.chat_input("اسألني أو اطلب المزيد..."):
         if not (st.session_state.pdf_images or st.session_state.text_content):
             st.warning("يرجى رفع ملف أو لصق نص أولاً!")
         else:
@@ -262,33 +325,36 @@ else:
             with st.chat_message("user"): st.markdown(prompt)
             with st.chat_message("assistant"):
                 with st.spinner("..."):
-                    # هنا التعديل المهم جداً: نجبره يفصل الحلول في كل مرة
                     chat_instructions = f"""
                     المستخدم: {st.session_state.student_name}
                     السؤال: {prompt}
                     الأسلوب: {explanation_style}
-                    
-                    🛑 تعليمات مهمة جداً:
-                    - إذا طلب المستخدم "أسئلة" أو "كويز" أو "امتحان": اكتب الأسئلة أولاً، ثم اكتب الكلمة الفاصلة "||SPLIT||"، ثم اكتب الإجابات الصحيحة بعدها.
-                    - إذا كان سؤالاً عادياً للشرح: جاوب بشكل طبيعي.
+                    🛑 تعليمات:
+                    - لأسئلة الـ Quiz: افصل الحلول بـ ||SPLIT||
+                    - للبطاقات: افصل بـ ||FLASH||
                     """
-                    
                     if st.session_state.content_type == "image":
                         resp = get_gemini_response(chat_instructions, st.session_state.pdf_images, is_images=True)
                     else:
                         full_text_context = f"النص الأصلي: {st.session_state.text_content}\n\n{chat_instructions}"
                         resp = get_gemini_response(full_text_context, "", is_images=False)
                     
-                    # التحقق من وجود الفاصل وعرض النتيجة
-                    if "||SPLIT||" in resp:
+                    # تحديد نوع الرسالة للحفظ
+                    is_split = "||SPLIT||" in resp
+                    is_flash = "||FLASH||" in resp
+                    
+                    if is_split:
                         parts = resp.split("||SPLIT||")
                         st.markdown(parts[0])
-                        with st.expander("👁️ الحل"):
-                            st.info(parts[1])
-                        # حفظ الحالة بأنها مقسومة
-                        st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": True})
+                        with st.expander("👁️ الحل"): st.info(parts[1])
+                    elif is_flash:
+                        st.markdown(resp) # البطاقات نعالجها بالعرض القادم
                     else:
                         st.markdown(resp)
-                        st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": False})
                         
-            # لا نحتاج rerun هنا لأننا عرضنا الرسالة يدوياً
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": resp, 
+                        "is_split": is_split,
+                        "is_flashcard": is_flash
+                    })
