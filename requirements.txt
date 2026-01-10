@@ -3,3 +3,5 @@ google-generativeai
 pymupdf
 Pillow
 gTTS
+streamlit-lottie
+requests
