@@ -19,7 +19,7 @@ PAGE_TITLE = "Study With Me"
 PAGE_ICON = "🎓"
 LAYOUT = "wide"
 
-# تعريف اسم الموديل هنا لتجنب خطأ NameError
+# ✅ هنا الحل: تعريف اسم الموديل بشكل صحيح
 MODEL_NAME = "gemini-1.5-flash"
 
 THEMES = {
@@ -293,7 +293,7 @@ def get_gemini_response(prompt: str, content_data: Any, is_images: bool = True) 
         if not api_key: return "⚠️ API Key not found. Please configure secrets."
         
         configure_genai(api_key)
-        # تم تصحيح الخطأ هنا باستخدام MODEL_NAME
+        # ✅ استخدام المتغير الصحيح
         model = genai.GenerativeModel(MODEL_NAME)
         
         content = [prompt] + content_data if is_images else [prompt + "\n\n" + str(content_data)]
@@ -460,148 +460,4 @@ def main():
                     st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
-    # -- Utility Generation Triggers --
-    if st.session_state.get("trigger_flashcards"):
-        with st.spinner("Generating Flashcards..."):
-            flash_prompt = "Extract the top 5 key terms and definitions. Format: Term || Definition"
-            if st.session_state.content_type == "image":
-                resp = get_gemini_response(flash_prompt, st.session_state.pdf_images, is_images=True)
-            else:
-                resp = get_gemini_response(f"Context: {st.session_state.text_content}\n\n{flash_prompt}", "", is_images=False)
-            st.session_state.messages.append({"role": "assistant", "content": resp, "is_flashcard": True})
-            st.session_state.trigger_flashcards = False
-            st.rerun()
-
-    if st.session_state.get("trigger_quiz"):
-        with st.spinner("Preparing Quiz..."):
-            quiz_prompt = """
-            Create 3 MCQ questions. Output JSON ONLY:
-            [{"question": "..", "options": [".."], "answer": "..", "explanation": ".."}]
-            """
-            content = st.session_state.pdf_images if st.session_state.content_type == "image" else st.session_state.text_content
-            is_img = st.session_state.content_type == "image"
-            
-            resp = get_gemini_response(quiz_prompt if is_img else f"Context: {content}\n\n{quiz_prompt}", 
-                                     content if is_img else "", 
-                                     is_images=is_img)
-            try:
-                cleaned = resp.replace("```json", "").replace("```", "").strip()
-                st.session_state.quiz_data = json.loads(cleaned)
-            except: st.error("Failed to generate quiz format.")
-            st.session_state.trigger_quiz = False
-            st.rerun()
-
-    # -- Chat & Interaction Area --
-    st.divider()
-    
-    # Render Quiz
-    if st.session_state.quiz_data:
-        st.subheader("🧠 Quiz Time")
-        score = 0
-        for idx, q in enumerate(st.session_state.quiz_data):
-            st.markdown(f"**Q{idx+1}: {q['question']}**")
-            uc = st.radio("Select Answer:", q['options'], key=f"q_{idx}", index=None)
-            if uc:
-                if uc == q['answer']:
-                    st.success("Correct! ✅")
-                    score += 1
-                else:
-                    st.error(f"Incorrect. Answer: {q['answer']}")
-                    st.info(q['explanation'])
-            st.write("---")
-        if st.button("Finish Quiz"):
-             st.balloons() if score == len(st.session_state.quiz_data) else None
-             st.success(f"Score: {score}/{len(st.session_state.quiz_data)}")
-             st.session_state.quiz_data = None
-             st.rerun()
-
-    # Chat Messages
-    for i, msg in enumerate(st.session_state.messages):
-        role = msg["role"]
-        with st.chat_message(role):
-            if msg.get("is_flashcard"):
-                st.markdown("### 🃏 Flashcards")
-                for line in msg["content"].split('\n'):
-                    if "||" in line:
-                        try:
-                            t, d = line.split("||")
-                            with st.expander(f"📌 {t}"): st.info(d)
-                        except: pass
-                if st.button("🔊 Play Audio", key=f"aud_{i}"):
-                      aud_bytes = text_to_audio_bytes(msg["content"].replace("||", " means "))
-                      if aud_bytes: st.audio(aud_bytes, format='audio/mp3')
-
-            elif msg.get("is_split") or "||SPLIT||" in str(msg["content"]):
-                parts = msg["content"].split("||SPLIT||")
-                st.markdown(parts[0])
-                if st.button("🔊 Play", key=f"aud_{i}"):
-                    aud_bytes = text_to_audio_bytes(parts[0])
-                    if aud_bytes: st.audio(aud_bytes, format='audio/mp3')
-                    
-                if len(parts) > 1:
-                    with st.expander("👁️ Show Solution/Details"): st.info(parts[1])
-            else:
-                st.markdown(msg["content"])
-                if role == "assistant" and st.button("🔊 Play", key=f"aud_{i}"):
-                      aud_bytes = text_to_audio_bytes(msg["content"])
-                      if aud_bytes: st.audio(aud_bytes, format='audio/mp3')
-
-    # Chat Input
-    # Only enable chat if content is loaded
-    if st.session_state.pdf_images or st.session_state.text_content:
-        c1, c2 = st.columns([1, 8])
-        with c1:
-            st.write("") # Spacer
-            # Note: speech_to_text might differ in rendering depending on library version
-            audio_text = speech_to_text(language='ar', start_prompt="🎤", stop_prompt="⏹️", just_once=True, key='STT')
-        
-        prompt = audio_text if audio_text else st.chat_input("Ask a follow-up question...")
-        
-        if prompt:
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            st.rerun()
-
-    # Handle Helper Response generation after rerun to show user message immediately
-    # (Simple logic: if last message is user, generate response)
-    if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-        last_msg = st.session_state.messages[-1]["content"]
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                instr = f"User: {st.session_state.student_name}. Question: {last_msg}. Style: {explanation_style}. Separate solutions with ||SPLIT|| and flashcards with ||FLASH||"
-                
-                if st.session_state.content_type == "image":
-                    resp = get_gemini_response(instr, st.session_state.pdf_images, is_images=True)
-                else:
-                    resp = get_gemini_response(f"Context: {st.session_state.text_content}\n\n{instr}", "", is_images=False)
-                
-                is_split = "||SPLIT||" in resp
-                is_flash = "||FLASH||" in resp
-                
-                st.session_state.messages.append({
-                    "role": "assistant", 
-                    "content": resp, 
-                    "is_split": is_split, 
-                    "is_flashcard": is_flash
-                })
-                st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True) # End main content
-
-    # --- Footer ---
-    st.markdown("""
-        <div class="footer-container">
-            <div class="footer-content">
-                <span>Developed by <b>fadhel wisam</b></span>
-                <span style="color: #e0e0e0;">|</span>
-                <a href="https://www.instagram.com/leavingt0n1ght?igsh=MTk1enRuZnh3M3Nkdw==" target="_blank" class="social-link">
-                    📸 Instagram
-                </a>
-                <a href="https://www.facebook.com/share/17wzPoDcLp/" target="_blank" class="social-link">
-                    📘 Facebook
-                </a>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-if __name__ == "__main__":
-    main()
+    # -- Utility Generation Tr
