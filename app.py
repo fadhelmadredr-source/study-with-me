@@ -10,17 +10,37 @@ from datetime import datetime, timedelta
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
-# --- 2. التصميم (CSS) ---
+# --- 2. التصميم (CSS) - التعديل الجديد ---
 custom_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
     .stApp { background-color: #f8f9fa; color: #212529; }
     
-    /* اخفاء العناصر غير المرغوبة */
-    [data-testid="stToolbar"] { display: none !important; }
-    header { visibility: hidden !important; }
-    footer { visibility: hidden !important; }
+    /* -------------------------------------------------- */
+    /* 🎯 منطقة الإخفاء الذكي (Smart Hide) */
+    
+    /* 1. إبقاء الشريط العلوي ظاهراً (حتى تشتغل النقاط الثلاثة) */
+    header { 
+        visibility: visible !important; 
+    }
+    
+    /* 2. إخفاء زر Deploy (علامة الصاروخ/GitHub) فقط */
+    .stDeployButton {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    
+    /* 3. إخفاء الفوتر السفلي (Made with Streamlit) */
+    footer {
+        visibility: hidden !important;
+    }
+    
+    /* 4. إخفاء خيارات التطوير المزعجة من القائمة (اختياري) */
+    ul[data-testid="main-menu-list"] > li:first-child {
+        display: none !important;
+    }
+    /* -------------------------------------------------- */
 
     /* تنسيق العناوين والأزرار */
     h1, h2, h3 { color: #1a73e8 !important; font-weight: 700; text-align: center; }
@@ -32,23 +52,12 @@ custom_css = """
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 8px rgba(0,0,0,0.15); color: white; }
     
-    /* تنسيق التبويبات (Tabs) */
+    /* تنسيق التبويبات */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        background-color: #ffffff;
-        padding: 10px;
-        border-radius: 15px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        gap: 10px; background-color: #ffffff; padding: 10px; border-radius: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        border-radius: 10px;
-        font-weight: bold;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #e8f0fe !important;
-        color: #1a73e8 !important;
-    }
+    .stTabs [data-baseweb="tab"] { height: 50px; border-radius: 10px; font-weight: bold; }
+    .stTabs [aria-selected="true"] { background-color: #e8f0fe !important; color: #1a73e8 !important; }
 
     section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e0e0e0; }
     .stChatMessage { background-color: #ffffff; border-radius: 15px; border: 1px solid #eee; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 10px; }
@@ -74,9 +83,9 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pdf_images" not in st.session_state:
     st.session_state.pdf_images = None
-if "text_content" not in st.session_state: # متغير جديد للنصوص
+if "text_content" not in st.session_state:
     st.session_state.text_content = None
-if "content_type" not in st.session_state: # لتحديد النوع (صور أو نص)
+if "content_type" not in st.session_state:
     st.session_state.content_type = None 
 if "study_end_time" not in st.session_state:
     st.session_state.study_end_time = None
@@ -92,7 +101,6 @@ with st.sidebar:
     
     api_key = st.text_input("مفتاح Gemini API:", type="password")
     
-    # اختيار الموديل
     selected_model_name = None
     if api_key:
         try:
@@ -110,7 +118,6 @@ with st.sidebar:
     name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
     if name_input: st.session_state.student_name = name_input
     
-    # المؤقت
     st.markdown("---")
     now = datetime.now()
     active_study = False
@@ -153,7 +160,6 @@ with st.sidebar:
     st.markdown("---")
     explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
 
-    # الحفظ
     st.markdown("---")
     chat_history_text = f"مراجعة: {st.session_state.student_name}\nالتاريخ: {datetime.now().strftime('%Y-%m-%d')}\n\n"
     for msg in st.session_state.messages:
@@ -185,16 +191,13 @@ def pdf_to_images(file):
         return images
     except: return None
 
-# دالة ذكية تقبل صور أو نص
 def get_gemini_response(prompt, content_data, is_images=True):
     try:
         model = genai.GenerativeModel(selected_model_name)
         if is_images:
             content = [prompt] + content_data
         else:
-            # إذا كان نص، ندمجه مع الرسالة
             content = [prompt + "\n\n" + content_data]
-            
         response = model.generate_content(content)
         return response.text
     except Exception as e: return f"حدث خطأ: {e}"
@@ -213,37 +216,31 @@ def text_to_audio(text):
 # --- 6. الواجهة الرئيسية ---
 st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #666;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
 
-# --- التبويبات (Tabs) ---
 tab1, tab2 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص"])
 
-# >>> التبويب 1: رفع PDF
 with tab1:
     uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
     if uploaded_file and st.button("تحليل الملف 🚀"):
         if api_key and selected_model_name:
             with st.spinner("جاري قراءة الملف..."):
                 st.session_state.pdf_images = pdf_to_images(uploaded_file)
-                st.session_state.text_content = None # تصفير النص
+                st.session_state.text_content = None
                 st.session_state.content_type = "image"
-                
                 if st.session_state.pdf_images:
                     prompt = f"أنا {st.session_state.student_name}. اشرح لي الصور بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
                     resp = get_gemini_response(prompt, st.session_state.pdf_images, is_images=True)
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
 
-# >>> التبويب 2: لصق نص
 with tab2:
-    txt_input = st.text_area("الصق النص هنا (من تليكرام، وورد، ملاحظات...):", height=200)
+    txt_input = st.text_area("الصق النص هنا:", height=200)
     if st.button("شرح النص 📝"):
         if txt_input and api_key and selected_model_name:
             with st.spinner("جاري تحليل النص..."):
                 st.session_state.text_content = txt_input
-                st.session_state.pdf_images = None # تصفير الصور
+                st.session_state.pdf_images = None
                 st.session_state.content_type = "text"
-                
                 prompt = f"أنا {st.session_state.student_name}. اشرح لي هذا النص بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
-                # نرسل النص للدالة
                 resp = get_gemini_response(prompt, txt_input, is_images=False)
                 st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                 st.rerun()
@@ -275,15 +272,11 @@ if prompt := st.chat_input("اسألني..."):
         with st.chat_message("assistant"):
             with st.spinner("..."):
                 chat_prompt = f"المستخدم: {st.session_state.student_name}. السؤال: {prompt}. (الأسلوب: {explanation_style})"
-                
-                # التحقق هل نستخدم صور أم نص للإجابة
                 if st.session_state.content_type == "image":
                     resp = get_gemini_response(chat_prompt, st.session_state.pdf_images, is_images=True)
                 else:
-                    # في حالة النص، نرسل النص الأصلي مرة ثانية كمصدر (Context)
                     full_text_context = f"النص الأصلي: {st.session_state.text_content}\n\nالسؤال الجديد: {chat_prompt}"
                     resp = get_gemini_response(full_text_context, "", is_images=False)
-                    
                 st.markdown(resp)
         st.session_state.messages.append({"role": "assistant", "content": resp})
         st.rerun()
