@@ -10,7 +10,8 @@ from datetime import datetime, timedelta
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
-# --- 2. التصميم (CSS) - تم تعديله لإظهار القائمة ---
+# --- 2. التصميم (CSS) ---
+# هنا التعديل المهم لإخفاء زر GitHub فقط
 custom_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
@@ -29,10 +30,24 @@ custom_css = """
     section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e0e0e0; }
     .stChatMessage { background-color: #ffffff; border-radius: 15px; border: 1px solid #eee; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 10px; }
     
-    /* --- التعديل هنا: إخفاء فقط زر Deploy والفوتر، وإبقاء القائمة --- */
-    .stDeployButton {display:none;} 
-    footer {visibility: hidden;}
-    /* header {visibility: hidden;}  <-- مسحت هذا السطر حتى ترجع القائمة */
+    /* --- كود الإخفاء المحدد --- */
+    
+    /* 1. إخفاء زر Deploy (اللي بي علامة الصاروخ أو GitHub) */
+    .stDeployButton {
+        display: none !important;
+    }
+    
+    /* 2. إخفاء الفوتر السفلي (Made with Streamlit) */
+    footer {
+        visibility: hidden !important;
+    }
+    
+    /* 3. إبقاء القائمة العلوية (النقاط الثلاثة) ظاهرة */
+    header {
+        visibility: visible !important;
+    }
+    
+    /* --------------------------- */
 
     .break-timer {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -62,7 +77,7 @@ if "study_end_time" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
 
-# --- 4. الاتصال بالمفتاح ---
+# --- 4. الاتصال ---
 api_key = None
 selected_model_name = None
 
@@ -72,17 +87,13 @@ try:
         genai.configure(api_key=api_key)
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         selected_model_name = next((m for m in models if 'flash' in m), "models/gemini-1.5-flash")
-    else:
-        # حتى لو ماكو مفتاح، نخلي الكود يكمل عشان تطلع القائمة الجانبية
-        pass 
 except Exception as e:
     pass
 
-# --- 5. القائمة الجانبية (لازم تطلع دائماً) ---
+# --- 5. القائمة الجانبية ---
 with st.sidebar:
     st.title("👤 ملف الطالب")
     
-    # اسم الطالب
     name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
     if name_input:
         st.session_state.student_name = name_input
@@ -133,7 +144,6 @@ with st.sidebar:
                 st.success("ارجع للدراسة!")
 
     st.markdown("---")
-    # هذا الخيار اللي كان مختفي
     explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
 
     st.markdown("---")
