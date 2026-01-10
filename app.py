@@ -10,38 +10,85 @@ from datetime import datetime, timedelta
 # --- 1. تصميم الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
+# --- كود التصميم الجديد (CSS Magic) ---
 custom_css = """
 <style>
-    .stApp { background-color: #ffffff; color: #000000; }
-    h1, h2, h3 { color: #000000 !important; }
-    p, li, label, .stMarkdown, .stText { color: #333333 !important; }
-    .stButton>button { background-color: #f0f2f6; color: #31333F; border-radius: 8px; border: 1px solid #d6d6d6; }
-    .stButton>button:hover { background-color: #e0e2e6; }
-    a { color: #0066cc !important; text-decoration: none; }
-    
-    /* --- كود الإخفاء (جديد) --- */
-    /* إخفاء زر Deploy والأيقونات العلوية */
-    .stDeployButton {display:none;}
-    header {visibility: hidden;}
-    
-    /* إخفاء فوتر Streamlit الرسمي */
-    footer {visibility: hidden;}
-    
-    /* إخفاء القائمة العلوية (اختياري - اذا ردت تخفي النقاط الثلاثة) */
-    /* #MainMenu {visibility: hidden;} */
-    
-    /* تنسيق العدادات */
+    /* استيراد خط 'Cairo' الجميل من Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+
+    /* تطبيق الخط على كل الموقع */
+    html, body, [class*="css"] {
+        font-family: 'Cairo', sans-serif;
+    }
+
+    /* خلفية الموقع (رصاصي فاتح جداً ومريح) */
+    .stApp {
+        background-color: #f8f9fa;
+        color: #212529;
+    }
+
+    /* تنسيق العناوين */
+    h1, h2, h3 {
+        color: #1a73e8 !important; /* لون أزرق غوغل */
+        font-weight: 700;
+        text-align: center;
+    }
+
+    /* تنسيق الأزرار (تدرج لوني أزرق) */
+    .stButton>button {
+        background: linear-gradient(45deg, #1a73e8, #0056b3);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 10px 24px;
+        font-size: 16px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px); /* حركة خفيفة عند التحويم */
+        box-shadow: 0 6px 8px rgba(0,0,0,0.15);
+        color: white;
+    }
+
+    /* تحسين شكل القائمة الجانبية */
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e0e0e0;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+    }
+
+    /* تنسيق رسائل الشات (فقاعات عصرية) */
+    .stChatMessage {
+        background-color: #ffffff;
+        border-radius: 15px;
+        border: 1px solid #eee;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        padding: 10px;
+    }
+
+    /* إخفاء شعارات GitHub و Streamlit */
+    .stDeployButton, header, footer {visibility: hidden;}
+
+    /* تنسيق العدادات (نفس السابق لكن مع خط أجمل) */
     .break-timer {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        background-color: rgba(0,0,0,0.9); color: white; padding: 50px;
-        border-radius: 20px; font-size: 80px; font-weight: bold; z-index: 9999;
-        text-align: center; width: 80%;
+        background-color: rgba(0,0,0,0.95); color: #fff; padding: 60px;
+        border-radius: 30px; font-size: 90px; font-weight: bold; z-index: 9999;
+        text-align: center; width: 80%; box-shadow: 0 0 50px rgba(0,0,0,0.5);
     }
-    .break-title { font-size: 30px; color: #ffcc00; display: block; margin-bottom: 20px; }
+    .break-title { font-size: 35px; color: #ffca28; display: block; margin-bottom: 20px; }
     
     .study-timer-box {
         border: 2px solid #4CAF50; background-color: #e8f5e9; color: #2e7d32;
-        padding: 10px; border-radius: 10px; text-align: center; font-weight: bold; margin-bottom: 10px;
+        padding: 15px; border-radius: 12px; text-align: center; font-weight: bold;
+        margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    /* تنسيق الحقوق */
+    .footer-text {
+        text-align: center; color: #6c757d; font-size: 14px; margin-top: 20px;
+        font-family: 'Cairo', sans-serif;
     }
 </style>
 """
@@ -81,7 +128,7 @@ with st.sidebar:
         if now < st.session_state.study_end_time:
             time_left = st.session_state.study_end_time - now
             mins, secs = divmod(int(time_left.total_seconds()), 60)
-            st.markdown(f"<div class='study-timer-box'>📚 باقي: {mins}:{secs:02d}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='study-timer-box'>📚 باقي للتركيز<br>{mins}:{secs:02d}</div>", unsafe_allow_html=True)
             active_study = True
             if st.button("إنهاء الجلسة ⏹️"):
                 st.session_state.study_end_time = None
@@ -107,7 +154,7 @@ with st.sidebar:
                 for i in range(total_sec):
                     left = total_sec - i
                     m, s = divmod(left, 60)
-                    placeholder.markdown(f"<div class='break-timer'><span class='break-title'>☕ استراحة!</span>{m:02d}:{s:02d}</div>", unsafe_allow_html=True)
+                    placeholder.markdown(f"<div class='break-timer'><span class='break-title'>☕ ريح عيونك شوية</span>{m:02d}:{s:02d}</div>", unsafe_allow_html=True)
                     time.sleep(1)
                 placeholder.empty()
                 st.success("ارجع للدراسة!")
@@ -120,9 +167,9 @@ with st.sidebar:
         st.session_state.pdf_images = None
         st.rerun()
 
-    # حقوق المطور (بدون روابط خارجية مزعجة)
+    # حقوق المطور
     st.markdown("---")
-    st.markdown("<div style='text-align: center; color: #666;'>Developed with ❤️ by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
+    st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
 
 # --- 4. الدوال ---
 def pdf_to_images(file):
@@ -155,7 +202,8 @@ def text_to_audio(text):
         return None
 
 # --- 5. الواجهة الرئيسية ---
-st.title("Study With Me 🎓")
+# عنوان بتصميم جديد
+st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #666;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
 
 if not api_key:
     st.error("⛔ يرجى إضافة المفتاح في إعدادات Secrets.")
@@ -163,7 +211,7 @@ else:
     uploaded_file = st.file_uploader("ارفع ملف الـ PDF", type="pdf")
 
     if uploaded_file and st.session_state.pdf_images is None:
-        with st.spinner("جاري التحليل..."):
+        with st.spinner("جاري تحليل الملف... ⏳"):
             try:
                 st.session_state.pdf_images = pdf_to_images(uploaded_file)
                 prompt = f"اشرح المحتوى بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
