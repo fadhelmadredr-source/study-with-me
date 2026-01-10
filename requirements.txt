@@ -6,4 +6,5 @@ gTTS
 streamlit-lottie
 requests
 streamlit-mic-recorder
-youtube-transcript-api
+youtube-transcript-api==0.6.2
+
