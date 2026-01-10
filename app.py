@@ -10,12 +10,12 @@ import requests
 from streamlit_lottie import st_lottie
 from streamlit_mic_recorder import speech_to_text
 import json
+import os # مكتبة التعامل مع الملفات للعداد
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
 # --- 2. إعدادات المظهر (Themes) ---
-# نعرف الألوان لكل وضع
 themes = {
     "☀️ نهاري (Light)": {
         "bg": "#f8f9fa", "text": "#212529", "card": "#ffffff", 
@@ -31,43 +31,56 @@ themes = {
     }
 }
 
-# نختار المظهر من السيشين أو الافتراضي
 if "current_theme" not in st.session_state:
     st.session_state.current_theme = "☀️ نهاري (Light)"
 
-# --- 3. حقن التصميم (Dynamic CSS) ---
+# --- 3. العداد البسيط (Visitor Counter) ---
+def update_visitor_count():
+    file_path = "counter.txt"
+    # اذا الملف غير موجود، ننشئه ونخلي بي 0
+    if not os.path.exists(file_path):
+        with open(file_path, "w") as f:
+            f.write("0")
+    
+    # نقرأ الرقم الحالي
+    try:
+        with open(file_path, "r") as f:
+            count = int(f.read())
+    except: count = 0
+    
+    # نزيد الرقم فقط اذا كانت جلسة جديدة (حتى لا يزيد مع كل ضغطة زر)
+    if "visited" not in st.session_state:
+        count += 1
+        with open(file_path, "w") as f:
+            f.write(str(count))
+        st.session_state.visited = True
+        
+    return count
+
+# استدعاء العداد
+visitor_count = update_visitor_count()
+
+# --- 4. حقن التصميم ---
 def apply_theme(theme_name):
     t = themes[theme_name]
     custom_css = f"""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
         html, body, [class*="css"] {{ font-family: 'Cairo', sans-serif; }}
-        
-        /* تطبيق الألوان المتغيرة */
         .stApp {{ background-color: {t['bg']}; color: {t['text']}; }}
         section[data-testid="stSidebar"] {{ background-color: {t['sidebar']}; border-right: 1px solid {t['border']}; }}
-        
-        /* البطاقات والحاويات */
         .quiz-container, .stTabs [data-baseweb="tab-list"], .study-timer-box {{
             background-color: {t['card']} !important;
             border: 1px solid {t['border']};
         }}
-        
-        /* النصوص والعناوين */
         h1, h2, h3 {{ color: {t['accent']} !important; font-weight: 700; text-align: center; }}
         p, div, li {{ color: {t['text']}; }}
-        
-        /* التبويبات */
         .stTabs [data-baseweb="tab"] {{ height: 50px; border-radius: 10px; font-weight: bold; color: {t['text']}; }}
         .stTabs [aria-selected="true"] {{ background-color: {t['bg']} !important; color: {t['accent']} !important; }}
-
-        /* إخفاء العناصر المزعجة */
         header {{ visibility: visible !important; }}
         .stDeployButton {{ display: none !important; visibility: hidden !important; }}
         footer {{ visibility: hidden !important; }}
         ul[data-testid="main-menu-list"] > li:first-child {{ display: none !important; }}
-
-        /* الأزرار */
         .stButton>button {{
             background: linear-gradient(45deg, {t['accent']}, {t['accent']});
             color: {t['bg'] if theme_name != '🌑 ليلي (Dark)' else '#fff'}; 
@@ -76,20 +89,21 @@ def apply_theme(theme_name):
             box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease;
         }}
         .stButton>button:hover {{ transform: translateY(-2px); filter: brightness(110%); }}
-        
-        /* تنسيق خاص للمؤقت */
         .study-timer-box {{
             border: 2px solid {t['accent']};
             color: {t['accent']};
             padding: 15px; border-radius: 12px; text-align: center; font-weight: bold;
             margin-bottom: 15px;
         }}
-        .footer-text {{ text-align: center; color: #6c757d; font-size: 14px; margin-top: 20px; }}
+        .visitor-box {{
+            text-align: center; padding: 10px; margin-top: 20px;
+            border-top: 1px solid {t['border']}; color: {t['text']}; opacity: 0.8; font-size: 14px;
+        }}
     </style>
     """
     st.markdown(custom_css, unsafe_allow_html=True)
 
-# --- 4. تهيئة الذاكرة ---
+# --- 5. تهيئة الذاكرة ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "pdf_images" not in st.session_state: st.session_state.pdf_images = None
 if "text_content" not in st.session_state: st.session_state.text_content = None
@@ -98,7 +112,7 @@ if "study_end_time" not in st.session_state: st.session_state.study_end_time = N
 if "student_name" not in st.session_state: st.session_state.student_name = "يا بطل"
 if "quiz_data" not in st.session_state: st.session_state.quiz_data = None
 
-# --- 5. دوال مساعدة ---
+# --- 6. دوال مساعدة ---
 def load_lottieurl(url):
     try:
         r = requests.get(url)
@@ -111,7 +125,6 @@ if not lottie_study:
     lottie_study = load_lottieurl("https://assets9.lottiefiles.com/packages/lf20_x17ybolp.json")
 
 def create_html_report(messages, student_name):
-    # تقرير بسيط HTML
     html = f"""
     <html dir="rtl" lang="ar">
     <body style="font-family: sans-serif; padding: 20px; background-color: #f9f9f9;">
@@ -162,28 +175,19 @@ def text_to_audio(text):
         return fp
     except: return None
 
-# --- 6. القائمة الجانبية (Sidebar) ---
+# --- 7. القائمة الجانبية ---
 with st.sidebar:
     st.title("⚙️ الإعدادات")
     
-    # >> زر اختيار المظهر الجديد <<
     st.subheader("🎨 مظهر التطبيق")
-    selected_theme = st.selectbox(
-        "اختر لونك المفضل:", 
-        list(themes.keys()), 
-        index=list(themes.keys()).index(st.session_state.current_theme)
-    )
-    # تحديث الثيم اذا تغير
+    selected_theme = st.selectbox("اختر لونك المفضل:", list(themes.keys()), index=list(themes.keys()).index(st.session_state.current_theme))
     if selected_theme != st.session_state.current_theme:
         st.session_state.current_theme = selected_theme
         st.rerun()
-    
-    # تطبيق الثيم المختار
     apply_theme(st.session_state.current_theme)
     
     st.divider()
 
-    # باقي الاعدادات (المفتاح والموديل)
     api_key = None
     selected_model_name = "models/gemini-1.5-flash"
     try:
@@ -198,8 +202,6 @@ with st.sidebar:
                 flash_model = next((m for m in available_models if 'flash' in m), None)
                 pro_model = next((m for m in available_models if '1.5-pro' in m), None)
                 selected_model_name = flash_model if flash_model else (pro_model if pro_model else available_models[0])
-        else:
-            st.error("⚠️ المفتاح غير موجود")
     except: pass
 
     st.subheader("👤 ملف الطالب")
@@ -224,7 +226,6 @@ with st.sidebar:
         else:
             st.toast("⚠️ ارفع ملف أولاً!", icon="📂")
 
-    # المؤقت
     st.markdown("---")
     now = datetime.now()
     active_study = False
@@ -255,12 +256,7 @@ with st.sidebar:
 
     st.markdown("---")
     html_report = create_html_report(st.session_state.messages, st.session_state.student_name)
-    st.download_button(
-        label="📥 تحميل الملخص (HTML)",
-        data=html_report,
-        file_name=f"summary.html",
-        mime="text/html"
-    )
+    st.download_button("📥 تحميل الملخص (HTML)", html_report, "summary.html", "text/html")
 
     if st.button("مسح المحادثة 🗑️"):
         st.session_state.messages = []
@@ -270,13 +266,22 @@ with st.sidebar:
         st.session_state.quiz_data = None
         st.rerun()
 
-# --- 7. الواجهة الرئيسية ---
+    # --- عرض العداد في الفوتر ---
+    st.markdown(f"""
+    <div class='visitor-box'>
+        <b>📊 إحصائيات التطبيق</b><br>
+        عدد الزوار: {visitor_count}
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
+
+# --- 8. الواجهة الرئيسية ---
 st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; opacity: 0.7;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
 
 if not api_key:
     st.warning("⚠️ الموقع بانتظار تفعيل المفتاح من المطور (Secrets).")
 else:
-    # التبويبات
     tab1, tab2, tab3 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص", "📸 صورة (سبورة/دفتر)"])
 
     with tab1:
@@ -323,7 +328,6 @@ else:
                     st.rerun()
                 except Exception as e: st.error(f"خطأ: {e}")
 
-    # --- معالجة البطاقات والكويز (خلف الكواليس) ---
     if "trigger_flashcards" in st.session_state and st.session_state.trigger_flashcards:
         if lottie_study: st_lottie(lottie_study, height=150, key="loading_flash")
         with st.spinner("جاري صناعة البطاقات..."):
@@ -354,7 +358,6 @@ else:
             st.session_state.trigger_quiz = False
             st.rerun()
 
-    # --- عرض الشات ---
     for i, msg in enumerate(st.session_state.messages):
         role = msg["role"]
         with st.chat_message(role):
@@ -369,7 +372,6 @@ else:
                 if st.button("🔊 اقرأ", key=f"aud_{i}"):
                      aud = text_to_audio(msg["content"].replace("||", " هي "))
                      if aud: st.audio(aud, format='audio/mp3')
-
             elif msg.get("is_split") or "||SPLIT||" in str(msg["content"]):
                 parts = msg["content"].split("||SPLIT||")
                 st.markdown(parts[0])
@@ -383,7 +385,6 @@ else:
                      aud = text_to_audio(msg["content"])
                      if aud: st.audio(aud, format='audio/mp3')
 
-    # --- عرض الكويز ---
     if st.session_state.quiz_data:
         st.divider()
         st.subheader("🧠 اختبر معلوماتك")
@@ -399,20 +400,17 @@ else:
                     st.error(f"❌ خطأ. الصح: {q['answer']}")
                     st.info(q['explanation'])
             st.write("---")
-        
         if st.button("إنهاء"):
             st.balloons() if score == len(st.session_state.quiz_data) else None
             st.success(f"النتيجة: {score}/{len(st.session_state.quiz_data)}")
             st.session_state.quiz_data = None
             st.rerun()
 
-    # --- الإدخال (صوت + نص) ---
     if st.session_state.pdf_images or st.session_state.text_content:
         c1, c2 = st.columns([1, 8])
         with c1:
             st.write("")
             audio = speech_to_text(language='ar', start_prompt="🎤", stop_prompt="⏹️", just_once=True, key='STT')
-        
         prompt = audio if audio else st.chat_input("اسألني...")
         if prompt:
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -425,16 +423,13 @@ else:
                         resp = get_gemini_response(instr, st.session_state.pdf_images, is_images=True)
                     else:
                         resp = get_gemini_response(f"النص الأصلي: {st.session_state.text_content}\n\n{instr}", "", is_images=False)
-                    
                     is_split = "||SPLIT||" in resp
                     is_flash = "||FLASH||" in resp
-                    
                     if is_split:
                         p = resp.split("||SPLIT||")
                         st.markdown(p[0])
                         with st.expander("👁️ الحل"): st.info(p[1])
                     else: st.markdown(resp)
-                    
                     st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": is_split, "is_flashcard": is_flash})
             st.rerun()
     else:
