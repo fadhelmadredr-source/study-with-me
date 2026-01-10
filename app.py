@@ -6,6 +6,8 @@ import io
 from gtts import gTTS
 import time
 from datetime import datetime, timedelta
+import requests  # مكتبة جديدة لجلب الانميشن
+from streamlit_lottie import st_lottie  # مكتبة الانميشن
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
@@ -17,13 +19,11 @@ custom_css = """
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
     .stApp { background-color: #f8f9fa; color: #212529; }
     
-    /* إخفاء العناصر غير الضرورية */
     header { visibility: visible !important; }
     .stDeployButton { display: none !important; visibility: hidden !important; }
     footer { visibility: hidden !important; }
     ul[data-testid="main-menu-list"] > li:first-child { display: none !important; }
 
-    /* تنسيقات عامة */
     h1, h2, h3 { color: #1a73e8 !important; font-weight: 700; text-align: center; }
     .stButton>button {
         background: linear-gradient(45deg, #1a73e8, #0056b3);
@@ -32,15 +32,6 @@ custom_css = """
         box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease;
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 8px rgba(0,0,0,0.15); color: white; }
-    
-    /* تنسيق البطاقات (Flashcards) */
-    .streamlit-expanderHeader {
-        background-color: #ffffff;
-        border-radius: 10px;
-        border: 1px solid #e0e0e0;
-        font-weight: bold;
-        color: #1a73e8;
-    }
     
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px; background-color: #ffffff; padding: 10px; border-radius: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
@@ -80,7 +71,20 @@ if "study_end_time" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
 
-# --- 4. القائمة الجانبية ---
+# --- 4. دالة تحميل الأنميشن (الجديدة) ---
+def load_lottieurl(url):
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+# رابط انميشن (روبوت يقرأ كتاب)
+lottie_study = load_lottieurl("https://lottie.host/5a67b4eb-d731-417c-9b8b-871a9388319f/7Q0q9q9q9q.json") 
+# اذا الرابط الفوك ما اشتغل، هذا رابط احتياطي لروبوت عام:
+if not lottie_study:
+    lottie_study = load_lottieurl("https://assets9.lottiefiles.com/packages/lf20_x17ybolp.json")
+
+# --- 5. القائمة الجانبية ---
 with st.sidebar:
     st.title("⚙️ الإعدادات")
     
@@ -91,13 +95,10 @@ with st.sidebar:
         if "GEMINI_API_KEY" in st.secrets:
             api_key = st.secrets["GEMINI_API_KEY"]
             genai.configure(api_key=api_key)
-            
-            # كشف الموديلات تلقائياً
             available_models = []
             for m in genai.list_models():
                 if 'generateContent' in m.supported_generation_methods:
                     available_models.append(m.name)
-            
             if available_models:
                 flash_model = next((m for m in available_models if 'flash' in m), None)
                 pro_model = next((m for m in available_models if '1.5-pro' in m), None)
@@ -105,19 +106,17 @@ with st.sidebar:
         else:
             st.error("⚠️ المفتاح غير موجود في Secrets!")
     except Exception as e:
-        st.error(f"⚠️ خطأ في الاتصال: {e}")
+        st.error(f"⚠️ خطأ: {e}")
 
     st.subheader("👤 ملف الطالب")
     name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
     if name_input: st.session_state.student_name = name_input
     
-    # --- قسم الأدوات الذكية (الجديد) ---
     st.markdown("---")
     st.write("🧠 **أدوات ذكية:**")
     if st.button("🃏 اصنع بطاقات مراجعة"):
         if st.session_state.pdf_images or st.session_state.text_content:
-            st.session_state.messages.append({"role": "user", "content": "اريد بطاقات مراجعة (Flashcards) للمحتوى."})
-            # سنعالج هذا الطلب في الأسفل
+            st.session_state.messages.append({"role": "user", "content": "اريد بطاقات مراجعة (Flashcards)."})
             st.session_state.trigger_flashcards = True 
         else:
             st.toast("⚠️ ارفع ملف أو نص أولاً!", icon="📂")
@@ -184,7 +183,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
 
-# --- 5. الدوال ---
+# --- 6. الدوال المساعدة ---
 def pdf_to_images(file):
     try:
         doc = fitz.open(stream=file.read(), filetype="pdf")
@@ -220,7 +219,7 @@ def text_to_audio(text):
         return fp
     except: return None
 
-# --- 6. الواجهة الرئيسية ---
+# --- 7. الواجهة الرئيسية ---
 st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #666;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
 
 if not api_key:
@@ -231,6 +230,10 @@ else:
     with tab1:
         uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
         if uploaded_file and st.button("تحليل الملف 🚀"):
+            # عرض الانميشن
+            if lottie_study:
+                st_lottie(lottie_study, height=200, key="loading_pdf")
+            
             with st.spinner("جاري قراءة الملف..."):
                 st.session_state.pdf_images = pdf_to_images(uploaded_file)
                 st.session_state.text_content = None
@@ -245,6 +248,10 @@ else:
         txt_input = st.text_area("الصق النص هنا:", height=200)
         if st.button("شرح النص 📝"):
             if txt_input:
+                # عرض الانميشن
+                if lottie_study:
+                    st_lottie(lottie_study, height=200, key="loading_text")
+
                 with st.spinner("جاري تحليل النص..."):
                     st.session_state.text_content = txt_input
                     st.session_state.pdf_images = None
@@ -254,17 +261,17 @@ else:
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
 
-    # --- معالجة طلب البطاقات (Flashcards Logic) ---
+    # --- معالجة طلب البطاقات ---
     if "trigger_flashcards" in st.session_state and st.session_state.trigger_flashcards:
-        with st.spinner("جاري صناعة البطاقات... 🃏"):
-            flash_prompt = """
-            استخرج أهم 5 مصطلحات وتعاريفها من المحتوى.
-            المطلوب: يجب أن تكون الإجابة بصيغة قائمة مفصولة بـ ||FLASH||.
-            مثال:
-            المايتوكندريا || بيوت الطاقة في الخلية
-            النواة || مركز التحكم في الخلية
+        # عرض الانميشن
+        if lottie_study:
+            st_lottie(lottie_study, height=150, key="loading_flash")
             
-            فقط المصطلحات والتعاريف، بدون مقدمات.
+        with st.spinner("جاري صناعة البطاقات..."):
+            flash_prompt = """
+            استخرج أهم 5 مصطلحات وتعاريفها.
+            الصيغة:
+            المصطلح || التعريف
             """
             if st.session_state.content_type == "image":
                 resp = get_gemini_response(flash_prompt, st.session_state.pdf_images, is_images=True)
@@ -273,14 +280,13 @@ else:
                 resp = get_gemini_response(context, "", is_images=False)
             
             st.session_state.messages.append({"role": "assistant", "content": resp, "is_flashcard": True})
-            st.session_state.trigger_flashcards = False # Reset
+            st.session_state.trigger_flashcards = False
             st.rerun()
 
-    # --- 7. الشات وعرض الرسائل ---
+    # --- 8. الشات وعرض الرسائل ---
     for i, msg in enumerate(st.session_state.messages):
         role = msg["role"]
         with st.chat_message(role):
-            # 1. عرض البطاقات التعليمية
             if msg.get("is_flashcard"):
                 st.markdown("### 🃏 بطاقات المراجعة السريعة")
                 lines = msg["content"].split('\n')
@@ -288,19 +294,16 @@ else:
                     if "||" in line:
                         try:
                             term, definition = line.split("||")
-                            # تنظيف النص
                             term = term.replace("FLASH", "").replace("|", "").strip()
                             definition = definition.replace("FLASH", "").replace("|", "").strip()
                             if term and definition:
                                 with st.expander(f"📌 {term}"):
                                     st.info(definition)
                         except: pass
-                # خيار سماع البطاقات
                 if st.button("🔊 اقرأ البطاقات", key=f"aud_{i}"):
                      aud = text_to_audio(msg["content"].replace("||", " تعني "))
                      if aud: st.audio(aud, format='audio/mp3')
 
-            # 2. عرض الأسئلة والحلول المخفية
             elif msg.get("is_split") or "||SPLIT||" in str(msg["content"]):
                 parts = msg["content"].split("||SPLIT||")
                 st.markdown(parts[0])
@@ -309,8 +312,6 @@ else:
                     if aud: st.audio(aud, format='audio/mp3')
                 with st.expander("👁️ الحل"):
                     if len(parts) > 1: st.info(parts[1])
-            
-            # 3. عرض الشات العادي
             else:
                 st.markdown(msg["content"])
                 if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
@@ -319,19 +320,21 @@ else:
 
     if prompt := st.chat_input("اسألني أو اطلب المزيد..."):
         if not (st.session_state.pdf_images or st.session_state.text_content):
-            st.warning("يرجى رفع ملف أو لصق نص أولاً!")
+            st.warning("يرجى رفع ملف أولاً!")
         else:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             with st.chat_message("assistant"):
+                # عرض الانميشن أثناء الكتابة
+                if lottie_study:
+                    st_lottie(lottie_study, height=100, key="loading_chat")
+
                 with st.spinner("..."):
                     chat_instructions = f"""
                     المستخدم: {st.session_state.student_name}
                     السؤال: {prompt}
                     الأسلوب: {explanation_style}
-                    🛑 تعليمات:
-                    - لأسئلة الـ Quiz: افصل الحلول بـ ||SPLIT||
-                    - للبطاقات: افصل بـ ||FLASH||
+                    🛑 تعليمات: افصل حلول الكويز بـ ||SPLIT|| وافصل البطاقات بـ ||FLASH||
                     """
                     if st.session_state.content_type == "image":
                         resp = get_gemini_response(chat_instructions, st.session_state.pdf_images, is_images=True)
@@ -339,7 +342,6 @@ else:
                         full_text_context = f"النص الأصلي: {st.session_state.text_content}\n\n{chat_instructions}"
                         resp = get_gemini_response(full_text_context, "", is_images=False)
                     
-                    # تحديد نوع الرسالة للحفظ
                     is_split = "||SPLIT||" in resp
                     is_flash = "||FLASH||" in resp
                     
@@ -348,7 +350,7 @@ else:
                         st.markdown(parts[0])
                         with st.expander("👁️ الحل"): st.info(parts[1])
                     elif is_flash:
-                        st.markdown(resp) # البطاقات نعالجها بالعرض القادم
+                        st.markdown(resp)
                     else:
                         st.markdown(resp)
                         
