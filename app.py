@@ -10,25 +10,20 @@ from datetime import datetime, timedelta
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
-# --- 2. التصميم (CSS) - إخفاء زر GitHub فقط ---
+# --- 2. التصميم (CSS) - إخفاء زر GitHub والهوامش ---
 custom_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
     .stApp { background-color: #f8f9fa; color: #212529; }
     
-    /* 1. إبقاء الشريط العلوي ظاهراً */
+    /* إخفاء العناصر غير الضرورية */
     header { visibility: visible !important; }
-    
-    /* 2. إخفاء زر Deploy (GitHub) */
     .stDeployButton { display: none !important; visibility: hidden !important; }
-    
-    /* 3. إخفاء الفوتر */
     footer { visibility: hidden !important; }
-    
-    /* 4. إخفاء خيارات المطورين */
     ul[data-testid="main-menu-list"] > li:first-child { display: none !important; }
 
+    /* تنسيقات عامة */
     h1, h2, h3 { color: #1a73e8 !important; font-weight: 700; text-align: center; }
     .stButton>button {
         background: linear-gradient(45deg, #1a73e8, #0056b3);
@@ -45,7 +40,6 @@ custom_css = """
     .stTabs [aria-selected="true"] { background-color: #e8f0fe !important; color: #1a73e8 !important; }
 
     section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e0e0e0; }
-    .stChatMessage { background-color: #ffffff; border-radius: 15px; border: 1px solid #eee; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 10px; }
     
     .break-timer {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -63,7 +57,7 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# --- 3. الذاكرة ---
+# --- 3. تهيئة الذاكرة (Session State) ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pdf_images" not in st.session_state:
@@ -77,23 +71,49 @@ if "study_end_time" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
 
-# --- 4. القائمة الجانبية (الإعدادات) ---
+# --- 4. القائمة الجانبية والإعدادات ---
 with st.sidebar:
     st.title("⚙️ الإعدادات")
     
-    # --- جلب المفتاح تلقائياً من Secrets (بدون خانة) ---
+    # >>> التعديل الجديد: كشف الموديلات تلقائياً <<<
     api_key = None
-    selected_model_name = "models/gemini-1.5-flash" # الموديل الافتراضي
+    selected_model_name = None
 
     try:
+        # 1. جلب المفتاح من الأسرار
         if "GEMINI_API_KEY" in st.secrets:
             api_key = st.secrets["GEMINI_API_KEY"]
             genai.configure(api_key=api_key)
+            
+            # 2. جلب قائمة الموديلات المتاحة فعلياً للحساب
+            available_models = []
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models.append(m.name)
+            
+            # 3. اختيار أفضل موديل (Flash ثم Pro ثم أي شيء)
+            if available_models:
+                # محاولة إيجاد Flash
+                flash_model = next((m for m in available_models if 'flash' in m), None)
+                # محاولة إيجاد Pro 1.5
+                pro_model = next((m for m in available_models if '1.5-pro' in m), None)
+                
+                if flash_model:
+                    selected_model_name = flash_model
+                elif pro_model:
+                    selected_model_name = pro_model
+                else:
+                    selected_model_name = available_models[0] # أول واحد متاح
+                
+                # st.success(f"✅ تم تفعيل الموديل: {selected_model_name}")
+            else:
+                st.error("⚠️ لم يتم العثور على موديلات متاحة لهذا المفتاح.")
         else:
             st.error("⚠️ المفتاح غير موجود في Secrets!")
     except Exception as e:
-        st.error("⚠️ خطأ في الاتصال بالمفتاح")
+        st.error(f"⚠️ خطأ في الاتصال: {e}")
 
+    # باقي القائمة الجانبية
     st.subheader("👤 ملف الطالب")
     name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
     if name_input: st.session_state.student_name = name_input
@@ -160,7 +180,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
 
-# --- 5. الدوال ---
+# --- 5. الدوال المساعدة ---
 def pdf_to_images(file):
     try:
         doc = fitz.open(stream=file.read(), filetype="pdf")
@@ -175,6 +195,9 @@ def pdf_to_images(file):
 
 def get_gemini_response(prompt, content_data, is_images=True):
     try:
+        if not selected_model_name:
+            return "⚠️ لم يتم تحديد موديل. تأكد من صحة المفتاح."
+        
         model = genai.GenerativeModel(selected_model_name)
         if is_images:
             content = [prompt] + content_data
@@ -182,7 +205,7 @@ def get_gemini_response(prompt, content_data, is_images=True):
             content = [prompt + "\n\n" + content_data]
         response = model.generate_content(content)
         return response.text
-    except Exception as e: return f"حدث خطأ: {e}"
+    except Exception as e: return f"حدث خطأ أثناء التوليد: {e}"
 
 def text_to_audio(text):
     try:
@@ -230,7 +253,7 @@ else:
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
 
-    # --- 7. الشات ---
+    # --- 7. الشات وعرض الرسائل ---
     for i, msg in enumerate(st.session_state.messages):
         role = msg["role"]
         with st.chat_message(role):
