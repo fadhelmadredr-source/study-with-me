@@ -10,6 +10,8 @@ import requests
 from streamlit_lottie import st_lottie
 from streamlit_mic_recorder import speech_to_text
 import json
+# مكتبة اليوتيوب الجديدة
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
@@ -50,10 +52,7 @@ custom_css = """
     }
     .footer-text { text-align: center; color: #6c757d; font-size: 14px; margin-top: 20px; font-family: 'Cairo', sans-serif; }
     
-    /* تنسيق الكويز */
     .quiz-container { background-color: white; padding: 20px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .correct-ans { color: green; font-weight: bold; }
-    .wrong-ans { color: red; font-weight: bold; }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -71,11 +70,8 @@ if "study_end_time" not in st.session_state:
     st.session_state.study_end_time = None
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
-# متغيرات الكويز
 if "quiz_data" not in st.session_state:
     st.session_state.quiz_data = None
-if "quiz_score" not in st.session_state:
-    st.session_state.quiz_score = 0
 
 # --- 4. دوال مساعدة ---
 def load_lottieurl(url):
@@ -101,7 +97,6 @@ def create_html_report(messages, student_name):
             .message {{ margin-bottom: 20px; padding: 15px; border-radius: 10px; }}
             .user {{ background-color: #e8f0fe; color: #1a73e8; border-right: 5px solid #1a73e8; }}
             .bot {{ background-color: #f1f3f4; color: #202124; border-right: 5px solid #34a853; }}
-            .timestamp {{ font-size: 0.8em; color: #666; text-align: left; margin-top: 5px; }}
         </style>
     </head>
     <body>
@@ -114,7 +109,6 @@ def create_html_report(messages, student_name):
         role_class = "user" if msg["role"] == "user" else "bot"
         role_name = student_name if msg["role"] == "user" else "المعلم الذكي"
         content = str(msg["content"]).replace("||SPLIT||", "<br><b>--- الحل ---</b><br>").replace("||FLASH||", "")
-        # تنظيف النص من JSON اذا ظهر
         if "```json" not in content:
             html += f"""
             <div class="message {role_class}">
@@ -124,6 +118,25 @@ def create_html_report(messages, student_name):
             """
     html += "</div></body></html>"
     return html
+
+# دالة استخراج النص من اليوتيوب
+def get_youtube_transcript(video_url):
+    try:
+        # استخراج المعرف (ID)
+        video_id = ""
+        if "v=" in video_url:
+            video_id = video_url.split("v=")[1].split("&")[0]
+        elif "youtu.be" in video_url:
+            video_id = video_url.split("/")[-1]
+        
+        if not video_id:
+            return "❌ الرابط غير صحيح"
+            
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar', 'en'])
+        text = " ".join([i['text'] for i in transcript])
+        return text
+    except Exception as e:
+        return f"❌ لا يمكن جلب النص (قد لا يحتوي الفيديو على ترجمة): {e}"
 
 # --- 5. القائمة الجانبية ---
 with st.sidebar:
@@ -156,7 +169,6 @@ with st.sidebar:
     st.markdown("---")
     st.write("🧠 **أدوات ذكية:**")
     
-    # زر البطاقات
     if st.button("🃏 اصنع بطاقات مراجعة"):
         if st.session_state.pdf_images or st.session_state.text_content:
             st.session_state.messages.append({"role": "user", "content": "اريد بطاقات مراجعة (Flashcards)."})
@@ -165,7 +177,6 @@ with st.sidebar:
         else:
             st.toast("⚠️ ارفع ملف أولاً!", icon="📂")
 
-    # زر الكويز الجديد
     if st.button("📝 اختبر معلوماتك (Quiz)"):
         if st.session_state.pdf_images or st.session_state.text_content:
             st.session_state.trigger_quiz = True
@@ -217,7 +228,6 @@ with st.sidebar:
     explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
 
     st.markdown("---")
-    # زر تحميل التقرير المطور
     html_report = create_html_report(st.session_state.messages, st.session_state.student_name)
     st.download_button(
         label="📥 تحميل الملخص (HTML ملون)",
@@ -279,13 +289,13 @@ st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #66
 if not api_key:
     st.warning("⚠️ الموقع بانتظار تفعيل المفتاح من المطور (Secrets).")
 else:
-    tab1, tab2 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص"])
+    # التبويبات الثلاثة
+    tab1, tab2, tab3 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص", "📺 تلخيص يوتيوب"])
 
     with tab1:
         uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
         if uploaded_file and st.button("تحليل الملف 🚀"):
-            if lottie_study:
-                st_lottie(lottie_study, height=200, key="loading_pdf")
+            if lottie_study: st_lottie(lottie_study, height=200, key="loading_pdf")
             with st.spinner("جاري قراءة الملف..."):
                 st.session_state.pdf_images = pdf_to_images(uploaded_file)
                 st.session_state.text_content = None
@@ -300,8 +310,7 @@ else:
         txt_input = st.text_area("الصق النص هنا:", height=200)
         if st.button("شرح النص 📝"):
             if txt_input:
-                if lottie_study:
-                    st_lottie(lottie_study, height=200, key="loading_text")
+                if lottie_study: st_lottie(lottie_study, height=200, key="loading_text")
                 with st.spinner("جاري تحليل النص..."):
                     st.session_state.text_content = txt_input
                     st.session_state.pdf_images = None
@@ -311,10 +320,31 @@ else:
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
 
+    # --- تبويب اليوتيوب الجديد ---
+    with tab3:
+        st.info("💡 ملاحظة: يجب أن يحتوي الفيديو على شرح مكتوب (CC/Subtitle).")
+        yt_url = st.text_input("🔗 الصق رابط فيديو يوتيوب:")
+        if st.button("لخص الفيديو 📺"):
+            if yt_url:
+                if lottie_study: st_lottie(lottie_study, height=200, key="loading_yt")
+                with st.spinner("جاري سحب الكلام من الفيديو..."):
+                    transcript_text = get_youtube_transcript(yt_url)
+                    
+                    if "❌" in transcript_text:
+                        st.error(transcript_text)
+                    else:
+                        st.session_state.text_content = transcript_text
+                        st.session_state.pdf_images = None
+                        st.session_state.content_type = "text" # نعامله معاملة النص
+                        
+                        prompt = f"أنا {st.session_state.student_name}. هذا نص فيديو يوتيوب. اشرح لي أهم النقاط بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
+                        resp = get_gemini_response(prompt, transcript_text, is_images=False)
+                        st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
+                        st.rerun()
+
     # --- معالجة طلب البطاقات ---
     if "trigger_flashcards" in st.session_state and st.session_state.trigger_flashcards:
-        if lottie_study:
-            st_lottie(lottie_study, height=150, key="loading_flash")
+        if lottie_study: st_lottie(lottie_study, height=150, key="loading_flash")
         with st.spinner("جاري صناعة البطاقات..."):
             flash_prompt = """
             استخرج أهم 5 مصطلحات وتعاريفها. الصيغة: المصطلح || التعريف
@@ -329,7 +359,7 @@ else:
             st.session_state.trigger_flashcards = False
             st.rerun()
 
-    # --- معالجة الكويز (الجديد) ---
+    # --- معالجة الكويز ---
     if "trigger_quiz" in st.session_state and st.session_state.trigger_quiz:
         if lottie_study: st_lottie(lottie_study, height=150, key="loading_quiz")
         with st.spinner("جاري إعداد الأسئلة..."):
@@ -340,7 +370,7 @@ else:
                 {"question": "السؤال الأول؟", "options": ["ا", "ب", "ج", "د"], "answer": "الجواب الصحيح", "explanation": "التوضيح"},
                 ...
             ]
-            لا تستخدم Markdown block. فقط JSON raw text.
+            لا تستخدم Markdown. فقط JSON raw text.
             """
             if st.session_state.content_type == "image":
                 resp = get_gemini_response(quiz_prompt, st.session_state.pdf_images, is_images=True)
@@ -349,11 +379,10 @@ else:
                 resp = get_gemini_response(context, "", is_images=False)
             
             try:
-                # تنظيف النص لمحاولة استخراج JSON
                 cleaned_json = resp.replace("```json", "").replace("```", "").strip()
                 st.session_state.quiz_data = json.loads(cleaned_json)
             except:
-                st.error("عذراً، حدث خطأ في بناء الكويز. حاول مرة أخرى.")
+                st.error("عذراً، حدث خطأ في بناء الكويز.")
             
             st.session_state.trigger_quiz = False
             st.rerun()
@@ -388,7 +417,7 @@ else:
                      aud = text_to_audio(msg["content"])
                      if aud: st.audio(aud, format='audio/mp3')
 
-    # --- عرض الكويز (في حال وجوده) ---
+    # --- عرض الكويز ---
     if st.session_state.quiz_data:
         st.divider()
         st.subheader("🧠 اختبر معلوماتك")
@@ -415,7 +444,7 @@ else:
                 st.success(f"👏 جيد جداً! درجتك {score}/{len(st.session_state.quiz_data)}")
             else:
                 st.warning(f"😅 تحتاج مراجعة. درجتك {score}/{len(st.session_state.quiz_data)}")
-            st.session_state.quiz_data = None # اخفاء الكويز بعد الحل
+            st.session_state.quiz_data = None
             st.rerun()
 
     # --- 9. منطقة الإدخال ---
