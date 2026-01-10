@@ -97,4 +97,193 @@ with st.sidebar:
     if api_key:
         try:
             genai.configure(api_key=api_key)
-            models =
+            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            default_index = next((i for i, m in enumerate(models) if 'flash' in m), 0)
+            if models:
+                st.success("✅ المفتاح شغال")
+                selected_model_name = st.selectbox("الموديل:", models, index=default_index)
+        except Exception as e:
+            st.error(f"المفتاح غير صحيح: {e}")
+
+    st.markdown("---")
+    st.subheader("👤 ملف الطالب")
+    name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
+    if name_input: st.session_state.student_name = name_input
+    
+    # المؤقت
+    st.markdown("---")
+    now = datetime.now()
+    active_study = False
+    if st.session_state.study_end_time:
+        if now < st.session_state.study_end_time:
+            time_left = st.session_state.study_end_time - now
+            mins, secs = divmod(int(time_left.total_seconds()), 60)
+            st.markdown(f"<div class='study-timer-box'>📚 باقي للتركيز<br>{mins}:{secs:02d}</div>", unsafe_allow_html=True)
+            active_study = True
+            if st.button("إنهاء الجلسة ⏹️"):
+                st.session_state.study_end_time = None
+                st.rerun()
+        else:
+            st.session_state.study_end_time = None
+            st.success("⏰ انتهت الجلسة!")
+            st.balloons()
+            st.rerun()
+            
+    if not active_study:
+        st.write("⏱️ **مؤقت التركيز:**")
+        timer_mode = st.radio("الوضع:", ("دراسة 📖", "استراحة ☕"), horizontal=True, label_visibility="collapsed")
+        if timer_mode == "دراسة 📖":
+            minutes = st.slider("الوقت (دقيقة):", 10, 180, 60)
+            if st.button("ابدأ 🚀"):
+                st.session_state.study_end_time = now + timedelta(minutes=minutes)
+                st.rerun()
+        else:
+            minutes = st.slider("الوقت (دقيقة):", 1, 60, 15)
+            if st.button("استراحة 💤"):
+                ph = st.empty()
+                ts = minutes * 60
+                for i in range(ts):
+                    left = ts - i
+                    m, s = divmod(left, 60)
+                    ph.markdown(f"<div class='break-timer'><span class='break-title'>☕ ريح عيونك</span>{m:02d}:{s:02d}</div>", unsafe_allow_html=True)
+                    time.sleep(1)
+                ph.empty()
+                st.success("ارجع للدراسة!")
+
+    st.markdown("---")
+    explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
+
+    # الحفظ
+    st.markdown("---")
+    chat_history_text = f"مراجعة: {st.session_state.student_name}\nالتاريخ: {datetime.now().strftime('%Y-%m-%d')}\n\n"
+    for msg in st.session_state.messages:
+        role = "المعلم" if msg["role"] == "assistant" else st.session_state.student_name
+        content = str(msg["content"]).replace("||SPLIT||", "\n--- الحلول ---\n")
+        chat_history_text += f"[{role}]:\n{content}\n{'='*30}\n"
+    st.download_button("📥 تحميل الملخص (TXT)", chat_history_text, f"summary_{st.session_state.student_name}.txt")
+
+    if st.button("مسح المحادثة 🗑️"):
+        st.session_state.messages = []
+        st.session_state.pdf_images = None
+        st.session_state.text_content = None
+        st.session_state.content_type = None
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
+
+# --- 5. الدوال ---
+def pdf_to_images(file):
+    try:
+        doc = fitz.open(stream=file.read(), filetype="pdf")
+        images = []
+        for page_num in range(min(5, len(doc))):
+            page = doc.load_page(page_num)
+            pix = page.get_pixmap()
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            images.append(img)
+        return images
+    except: return None
+
+# دالة ذكية تقبل صور أو نص
+def get_gemini_response(prompt, content_data, is_images=True):
+    try:
+        model = genai.GenerativeModel(selected_model_name)
+        if is_images:
+            content = [prompt] + content_data
+        else:
+            # إذا كان نص، ندمجه مع الرسالة
+            content = [prompt + "\n\n" + content_data]
+            
+        response = model.generate_content(content)
+        return response.text
+    except Exception as e: return f"حدث خطأ: {e}"
+
+def text_to_audio(text):
+    try:
+        if not text or len(text.strip()) == 0: return None
+        clean = text.replace("*", "").replace("#", "").replace("-", "")
+        tts = gTTS(text=clean, lang='ar')
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        return fp
+    except: return None
+
+# --- 6. الواجهة الرئيسية ---
+st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #666;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
+
+# --- التبويبات (Tabs) ---
+tab1, tab2 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص"])
+
+# >>> التبويب 1: رفع PDF
+with tab1:
+    uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
+    if uploaded_file and st.button("تحليل الملف 🚀"):
+        if api_key and selected_model_name:
+            with st.spinner("جاري قراءة الملف..."):
+                st.session_state.pdf_images = pdf_to_images(uploaded_file)
+                st.session_state.text_content = None # تصفير النص
+                st.session_state.content_type = "image"
+                
+                if st.session_state.pdf_images:
+                    prompt = f"أنا {st.session_state.student_name}. اشرح لي الصور بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
+                    resp = get_gemini_response(prompt, st.session_state.pdf_images, is_images=True)
+                    st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
+                    st.rerun()
+
+# >>> التبويب 2: لصق نص
+with tab2:
+    txt_input = st.text_area("الصق النص هنا (من تليكرام، وورد، ملاحظات...):", height=200)
+    if st.button("شرح النص 📝"):
+        if txt_input and api_key and selected_model_name:
+            with st.spinner("جاري تحليل النص..."):
+                st.session_state.text_content = txt_input
+                st.session_state.pdf_images = None # تصفير الصور
+                st.session_state.content_type = "text"
+                
+                prompt = f"أنا {st.session_state.student_name}. اشرح لي هذا النص بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
+                # نرسل النص للدالة
+                resp = get_gemini_response(prompt, txt_input, is_images=False)
+                st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
+                st.rerun()
+
+# --- 7. الشات ---
+for i, msg in enumerate(st.session_state.messages):
+    role = msg["role"]
+    with st.chat_message(role):
+        if msg.get("is_split"):
+            parts = msg["content"].split("||SPLIT||")
+            st.markdown(parts[0])
+            if st.button("🔊 استمع", key=f"aud_{i}"):
+                aud = text_to_audio(parts[0])
+                if aud: st.audio(aud, format='audio/mp3')
+            with st.expander("👁️ الحل"):
+                if len(parts) > 1: st.info(parts[1])
+        else:
+            st.markdown(msg["content"])
+            if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
+                 aud = text_to_audio(msg["content"])
+                 if aud: st.audio(aud, format='audio/mp3')
+
+if prompt := st.chat_input("اسألني..."):
+    if not (st.session_state.pdf_images or st.session_state.text_content):
+        st.warning("يرجى رفع ملف أو لصق نص أولاً!")
+    else:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"): st.markdown(prompt)
+        with st.chat_message("assistant"):
+            with st.spinner("..."):
+                chat_prompt = f"المستخدم: {st.session_state.student_name}. السؤال: {prompt}. (الأسلوب: {explanation_style})"
+                
+                # التحقق هل نستخدم صور أم نص للإجابة
+                if st.session_state.content_type == "image":
+                    resp = get_gemini_response(chat_prompt, st.session_state.pdf_images, is_images=True)
+                else:
+                    # في حالة النص، نرسل النص الأصلي مرة ثانية كمصدر (Context)
+                    full_text_context = f"النص الأصلي: {st.session_state.text_content}\n\nالسؤال الجديد: {chat_prompt}"
+                    resp = get_gemini_response(full_text_context, "", is_images=False)
+                    
+                st.markdown(resp)
+        st.session_state.messages.append({"role": "assistant", "content": resp})
+        st.rerun()
