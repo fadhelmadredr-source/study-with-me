@@ -6,6 +6,8 @@ gTTS
 streamlit-lottie
 requests
 streamlit-mic-recorder
+gspread
+oauth2client
 
 
 
