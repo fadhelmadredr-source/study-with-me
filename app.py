@@ -284,9 +284,8 @@ def rotate_api_key():
 def configure_genai(api_key: str):
     genai.configure(api_key=api_key)
 
-def get_gemini_response(prompt: str, content_data: Any, is_images: bool = True,model = genai.GenerativeModel("gemini-1.5-flash") -> str:
+def get_gemini_response(prompt: str, content_data: Any, is_images: bool = True) -> str:
     """Generates content using Gemini with retry logic and key rotation."""
-    
     max_retries = 3
     
     for attempt in range(max_retries):
@@ -605,4 +604,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
