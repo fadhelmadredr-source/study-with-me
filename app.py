@@ -10,15 +10,15 @@ from datetime import datetime, timedelta
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
-# --- 2. التصميم (CSS) ---
-# هنا التعديل المهم لإخفاء زر GitHub فقط
+# --- 2. التصميم (CSS) - كود الإخفاء القوي ---
 custom_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
     .stApp { background-color: #f8f9fa; color: #212529; }
-    h1, h2, h3 { color: #1a73e8 !important; font-weight: 700; text-align: center; }
     
+    /* تنسيق العناوين والأزرار */
+    h1, h2, h3 { color: #1a73e8 !important; font-weight: 700; text-align: center; }
     .stButton>button {
         background: linear-gradient(45deg, #1a73e8, #0056b3);
         color: white; border: none; border-radius: 12px;
@@ -30,25 +30,42 @@ custom_css = """
     section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e0e0e0; }
     .stChatMessage { background-color: #ffffff; border-radius: 15px; border: 1px solid #eee; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 10px; }
     
-    /* --- كود الإخفاء المحدد --- */
+    /* ---------------------------------------------------- */
+    /* ☢️ منطقة الإخفاء الإجباري (Nuclear Hide Code) ☢️ */
     
-    /* 1. إخفاء زر Deploy (اللي بي علامة الصاروخ أو GitHub) */
-    .stDeployButton {
+    /* 1. إخفاء زر Deploy بكل الأسماء المحتملة */
+    .stDeployButton, [data-testid="stDeployButton"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0px !important;
+        width: 0px !important;
+        opacity: 0 !important;
+    }
+    
+    /* 2. إخفاء الشريط الملون بالأعلى (Decoration) */
+    [data-testid="stDecoration"] {
         display: none !important;
     }
     
-    /* 2. إخفاء الفوتر السفلي (Made with Streamlit) */
+    /* 3. إخفاء الفوتر السفلي */
     footer {
         visibility: hidden !important;
+        display: none !important;
     }
     
-    /* 3. إبقاء القائمة العلوية (النقاط الثلاثة) ظاهرة */
-    header {
+    /* 4. التأكد من بقاء القائمة (النقاط الثلاثة) ظاهرة */
+    header, [data-testid="stHeader"] {
+        background: transparent !important;
         visibility: visible !important;
     }
     
-    /* --------------------------- */
+    /* 5. إخفاء أيقونة GitHub اذا كانت موجودة كصورة */
+    a[href*="github.com"] {
+        display: none !important;
+    }
+    /* ---------------------------------------------------- */
 
+    /* تنسيق العدادات */
     .break-timer {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
         background-color: rgba(0,0,0,0.95); color: #fff; padding: 60px;
@@ -180,78 +197,4 @@ def pdf_to_images(file):
             pix = page.get_pixmap()
             img = Image.open(io.BytesIO(pix.tobytes("png")))
             images.append(img)
-        return images
-    except:
-        return None
-
-def get_gemini_response(prompt, images):
-    try:
-        if not api_key: return "⚠️ يرجى إضافة المفتاح في إعدادات Secrets."
-        model = genai.GenerativeModel(selected_model_name)
-        content = [prompt] + images
-        response = model.generate_content(content)
-        return response.text
-    except Exception as e:
-        return f"حدث خطأ: {e}"
-
-def text_to_audio(text):
-    try:
-        if not text or len(text.strip()) == 0: return None
-        clean_text = text.replace("*", "").replace("#", "").replace("-", "")
-        tts = gTTS(text=clean_text, lang='ar')
-        audio_fp = io.BytesIO()
-        tts.write_to_fp(audio_fp)
-        audio_fp.seek(0)
-        return audio_fp
-    except:
-        return None
-
-# --- 7. الواجهة الرئيسية ---
-st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #666;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
-
-if not api_key:
-    st.error("⛔ الموقع يحتاج مفتاح API في الـ Secrets ليعمل.")
-    st.info("لا تنسى: اضغط على الـ 3 نقاط فوق > Settings > Secrets")
-else:
-    if not st.session_state.pdf_images:
-        st.info(f"هلا {st.session_state.student_name}! ارفع الملزمة وخلينا نبدي.")
-
-    uploaded_file = st.file_uploader("ارفع ملف الـ PDF", type="pdf")
-
-    if uploaded_file and st.session_state.pdf_images is None:
-        with st.spinner("جاري التحليل... ⏳"):
-            st.session_state.pdf_images = pdf_to_images(uploaded_file)
-            if st.session_state.pdf_images:
-                prompt = f"مرحبا، أنا الطالب {st.session_state.student_name}. اشرح لي المحتوى بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
-                resp = get_gemini_response(prompt, st.session_state.pdf_images)
-                st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": True})
-                st.rerun()
-
-    for i, msg in enumerate(st.session_state.messages):
-        role = msg["role"]
-        with st.chat_message(role):
-            if msg.get("is_split"):
-                parts = msg["content"].split("||SPLIT||")
-                st.markdown(parts[0])
-                if st.button("🔊 استمع", key=f"aud_{i}"):
-                    aud = text_to_audio(parts[0])
-                    if aud: st.audio(aud, format='audio/mp3')
-                with st.expander("👁️ الحل"):
-                    if len(parts) > 1: st.info(parts[1])
-            else:
-                st.markdown(msg["content"])
-                if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
-                     aud = text_to_audio(msg["content"])
-                     if aud: st.audio(aud, format='audio/mp3')
-
-    if prompt := st.chat_input("اسألني..."):
-        if st.session_state.pdf_images:
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"): st.markdown(prompt)
-            with st.chat_message("assistant"):
-                with st.spinner("..."):
-                    chat_prompt = f"المستخدم: {st.session_state.student_name}. السؤال: {prompt}. (الأسلوب: {explanation_style})"
-                    resp = get_gemini_response(chat_prompt, st.session_state.pdf_images)
-                    st.markdown(resp)
-            st.session_state.messages.append({"role": "assistant", "content": resp})
-            st.rerun()
+        return
