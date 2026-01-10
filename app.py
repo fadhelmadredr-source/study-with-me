@@ -10,39 +10,25 @@ from datetime import datetime, timedelta
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
-# --- 2. التصميم (CSS) - التعديل الجديد ---
+# --- 2. التصميم (CSS) - إخفاء زر GitHub فقط ---
 custom_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
     .stApp { background-color: #f8f9fa; color: #212529; }
     
-    /* -------------------------------------------------- */
-    /* 🎯 منطقة الإخفاء الذكي (Smart Hide) */
+    /* 1. إبقاء الشريط العلوي ظاهراً */
+    header { visibility: visible !important; }
     
-    /* 1. إبقاء الشريط العلوي ظاهراً (حتى تشتغل النقاط الثلاثة) */
-    header { 
-        visibility: visible !important; 
-    }
+    /* 2. إخفاء زر Deploy (GitHub) */
+    .stDeployButton { display: none !important; visibility: hidden !important; }
     
-    /* 2. إخفاء زر Deploy (علامة الصاروخ/GitHub) فقط */
-    .stDeployButton {
-        display: none !important;
-        visibility: hidden !important;
-    }
+    /* 3. إخفاء الفوتر */
+    footer { visibility: hidden !important; }
     
-    /* 3. إخفاء الفوتر السفلي (Made with Streamlit) */
-    footer {
-        visibility: hidden !important;
-    }
-    
-    /* 4. إخفاء خيارات التطوير المزعجة من القائمة (اختياري) */
-    ul[data-testid="main-menu-list"] > li:first-child {
-        display: none !important;
-    }
-    /* -------------------------------------------------- */
+    /* 4. إخفاء خيارات المطورين */
+    ul[data-testid="main-menu-list"] > li:first-child { display: none !important; }
 
-    /* تنسيق العناوين والأزرار */
     h1, h2, h3 { color: #1a73e8 !important; font-weight: 700; text-align: center; }
     .stButton>button {
         background: linear-gradient(45deg, #1a73e8, #0056b3);
@@ -52,7 +38,6 @@ custom_css = """
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 8px rgba(0,0,0,0.15); color: white; }
     
-    /* تنسيق التبويبات */
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px; background-color: #ffffff; padding: 10px; border-radius: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
@@ -92,33 +77,29 @@ if "study_end_time" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
 
-# --- 4. القائمة الجانبية ---
+# --- 4. القائمة الجانبية (الإعدادات) ---
 with st.sidebar:
     st.title("⚙️ الإعدادات")
     
-    with st.expander("❓ تعليمات المفتاح"):
-        st.markdown("احصل عليه من [Google AI Studio](https://aistudio.google.com/app/apikey).")
-    
-    api_key = st.text_input("مفتاح Gemini API:", type="password")
-    
-    selected_model_name = None
-    if api_key:
-        try:
-            genai.configure(api_key=api_key)
-            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            default_index = next((i for i, m in enumerate(models) if 'flash' in m), 0)
-            if models:
-                st.success("✅ المفتاح شغال")
-                selected_model_name = st.selectbox("الموديل:", models, index=default_index)
-        except Exception as e:
-            st.error(f"المفتاح غير صحيح: {e}")
+    # --- جلب المفتاح تلقائياً من Secrets (بدون خانة) ---
+    api_key = None
+    selected_model_name = "models/gemini-1.5-flash" # الموديل الافتراضي
 
-    st.markdown("---")
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            api_key = st.secrets["GEMINI_API_KEY"]
+            genai.configure(api_key=api_key)
+        else:
+            st.error("⚠️ المفتاح غير موجود في Secrets!")
+    except Exception as e:
+        st.error("⚠️ خطأ في الاتصال بالمفتاح")
+
     st.subheader("👤 ملف الطالب")
     name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
     if name_input: st.session_state.student_name = name_input
     
     st.markdown("---")
+    # المؤقت
     now = datetime.now()
     active_study = False
     if st.session_state.study_end_time:
@@ -161,6 +142,7 @@ with st.sidebar:
     explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
 
     st.markdown("---")
+    # زر التحميل
     chat_history_text = f"مراجعة: {st.session_state.student_name}\nالتاريخ: {datetime.now().strftime('%Y-%m-%d')}\n\n"
     for msg in st.session_state.messages:
         role = "المعلم" if msg["role"] == "assistant" else st.session_state.student_name
@@ -216,12 +198,15 @@ def text_to_audio(text):
 # --- 6. الواجهة الرئيسية ---
 st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #666;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص"])
+if not api_key:
+    st.warning("⚠️ الموقع بانتظار تفعيل المفتاح من المطور (Secrets).")
+else:
+    # التبويبات
+    tab1, tab2 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص"])
 
-with tab1:
-    uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
-    if uploaded_file and st.button("تحليل الملف 🚀"):
-        if api_key and selected_model_name:
+    with tab1:
+        uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
+        if uploaded_file and st.button("تحليل الملف 🚀"):
             with st.spinner("جاري قراءة الملف..."):
                 st.session_state.pdf_images = pdf_to_images(uploaded_file)
                 st.session_state.text_content = None
@@ -232,51 +217,51 @@ with tab1:
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
 
-with tab2:
-    txt_input = st.text_area("الصق النص هنا:", height=200)
-    if st.button("شرح النص 📝"):
-        if txt_input and api_key and selected_model_name:
-            with st.spinner("جاري تحليل النص..."):
-                st.session_state.text_content = txt_input
-                st.session_state.pdf_images = None
-                st.session_state.content_type = "text"
-                prompt = f"أنا {st.session_state.student_name}. اشرح لي هذا النص بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
-                resp = get_gemini_response(prompt, txt_input, is_images=False)
-                st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
-                st.rerun()
+    with tab2:
+        txt_input = st.text_area("الصق النص هنا:", height=200)
+        if st.button("شرح النص 📝"):
+            if txt_input:
+                with st.spinner("جاري تحليل النص..."):
+                    st.session_state.text_content = txt_input
+                    st.session_state.pdf_images = None
+                    st.session_state.content_type = "text"
+                    prompt = f"أنا {st.session_state.student_name}. اشرح لي هذا النص بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
+                    resp = get_gemini_response(prompt, txt_input, is_images=False)
+                    st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
+                    st.rerun()
 
-# --- 7. الشات ---
-for i, msg in enumerate(st.session_state.messages):
-    role = msg["role"]
-    with st.chat_message(role):
-        if msg.get("is_split"):
-            parts = msg["content"].split("||SPLIT||")
-            st.markdown(parts[0])
-            if st.button("🔊 استمع", key=f"aud_{i}"):
-                aud = text_to_audio(parts[0])
-                if aud: st.audio(aud, format='audio/mp3')
-            with st.expander("👁️ الحل"):
-                if len(parts) > 1: st.info(parts[1])
+    # --- 7. الشات ---
+    for i, msg in enumerate(st.session_state.messages):
+        role = msg["role"]
+        with st.chat_message(role):
+            if msg.get("is_split"):
+                parts = msg["content"].split("||SPLIT||")
+                st.markdown(parts[0])
+                if st.button("🔊 استمع", key=f"aud_{i}"):
+                    aud = text_to_audio(parts[0])
+                    if aud: st.audio(aud, format='audio/mp3')
+                with st.expander("👁️ الحل"):
+                    if len(parts) > 1: st.info(parts[1])
+            else:
+                st.markdown(msg["content"])
+                if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
+                     aud = text_to_audio(msg["content"])
+                     if aud: st.audio(aud, format='audio/mp3')
+
+    if prompt := st.chat_input("اسألني..."):
+        if not (st.session_state.pdf_images or st.session_state.text_content):
+            st.warning("يرجى رفع ملف أو لصق نص أولاً!")
         else:
-            st.markdown(msg["content"])
-            if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
-                 aud = text_to_audio(msg["content"])
-                 if aud: st.audio(aud, format='audio/mp3')
-
-if prompt := st.chat_input("اسألني..."):
-    if not (st.session_state.pdf_images or st.session_state.text_content):
-        st.warning("يرجى رفع ملف أو لصق نص أولاً!")
-    else:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
-        with st.chat_message("assistant"):
-            with st.spinner("..."):
-                chat_prompt = f"المستخدم: {st.session_state.student_name}. السؤال: {prompt}. (الأسلوب: {explanation_style})"
-                if st.session_state.content_type == "image":
-                    resp = get_gemini_response(chat_prompt, st.session_state.pdf_images, is_images=True)
-                else:
-                    full_text_context = f"النص الأصلي: {st.session_state.text_content}\n\nالسؤال الجديد: {chat_prompt}"
-                    resp = get_gemini_response(full_text_context, "", is_images=False)
-                st.markdown(resp)
-        st.session_state.messages.append({"role": "assistant", "content": resp})
-        st.rerun()
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"): st.markdown(prompt)
+            with st.chat_message("assistant"):
+                with st.spinner("..."):
+                    chat_prompt = f"المستخدم: {st.session_state.student_name}. السؤال: {prompt}. (الأسلوب: {explanation_style})"
+                    if st.session_state.content_type == "image":
+                        resp = get_gemini_response(chat_prompt, st.session_state.pdf_images, is_images=True)
+                    else:
+                        full_text_context = f"النص الأصلي: {st.session_state.text_content}\n\nالسؤال الجديد: {chat_prompt}"
+                        resp = get_gemini_response(full_text_context, "", is_images=False)
+                    st.markdown(resp)
+            st.session_state.messages.append({"role": "assistant", "content": resp})
+            st.rerun()
