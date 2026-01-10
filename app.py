@@ -10,67 +10,26 @@ from datetime import datetime, timedelta
 # --- 1. تصميم الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
-# --- كود التصميم الجديد (CSS Magic) ---
+# --- CSS (التصميم الخاص) ---
 custom_css = """
 <style>
-    /* استيراد خط 'Cairo' الجميل من Google Fonts */
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
-
-    /* تطبيق الخط على كل الموقع */
-    html, body, [class*="css"] {
-        font-family: 'Cairo', sans-serif;
-    }
-
-    /* خلفية الموقع (رصاصي فاتح جداً ومريح) */
-    .stApp {
-        background-color: #f8f9fa;
-        color: #212529;
-    }
-
-    /* تنسيق العناوين */
-    h1, h2, h3 {
-        color: #1a73e8 !important; /* لون أزرق غوغل */
-        font-weight: 700;
-        text-align: center;
-    }
-
-    /* تنسيق الأزرار (تدرج لوني أزرق) */
+    html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
+    .stApp { background-color: #f8f9fa; color: #212529; }
+    h1, h2, h3 { color: #1a73e8 !important; font-weight: 700; text-align: center; }
+    
     .stButton>button {
         background: linear-gradient(45deg, #1a73e8, #0056b3);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 10px 24px;
-        font-size: 16px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
+        color: white; border: none; border-radius: 12px;
+        padding: 10px 24px; font-size: 16px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease;
     }
-    .stButton>button:hover {
-        transform: translateY(-2px); /* حركة خفيفة عند التحويم */
-        box-shadow: 0 6px 8px rgba(0,0,0,0.15);
-        color: white;
-    }
-
-    /* تحسين شكل القائمة الجانبية */
-    section[data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e0e0e0;
-        box-shadow: 2px 0 5px rgba(0,0,0,0.05);
-    }
-
-    /* تنسيق رسائل الشات (فقاعات عصرية) */
-    .stChatMessage {
-        background-color: #ffffff;
-        border-radius: 15px;
-        border: 1px solid #eee;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        padding: 10px;
-    }
-
-    /* إخفاء شعارات GitHub و Streamlit */
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 8px rgba(0,0,0,0.15); color: white; }
+    
+    section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e0e0e0; }
+    .stChatMessage { background-color: #ffffff; border-radius: 15px; border: 1px solid #eee; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 10px; }
     .stDeployButton, header, footer {visibility: hidden;}
 
-    /* تنسيق العدادات (نفس السابق لكن مع خط أجمل) */
     .break-timer {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
         background-color: rgba(0,0,0,0.95); color: #fff; padding: 60px;
@@ -84,25 +43,23 @@ custom_css = """
         padding: 15px; border-radius: 12px; text-align: center; font-weight: bold;
         margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
-    
-    /* تنسيق الحقوق */
-    .footer-text {
-        text-align: center; color: #6c757d; font-size: 14px; margin-top: 20px;
-        font-family: 'Cairo', sans-serif;
-    }
+    .footer-text { text-align: center; color: #6c757d; font-size: 14px; margin-top: 20px; font-family: 'Cairo', sans-serif; }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# --- 2. إدارة الذاكرة والاتصال ---
+# --- 2. إدارة الذاكرة ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pdf_images" not in st.session_state:
     st.session_state.pdf_images = None
 if "study_end_time" not in st.session_state:
     st.session_state.study_end_time = None
+# متغيرات الطالب الجديدة
+if "student_name" not in st.session_state:
+    st.session_state.student_name = "يا بطل"
 
-# جلب المفتاح من الأسرار
+# جلب المفتاح
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
@@ -113,14 +70,21 @@ except Exception as e:
     api_key = None
     selected_model_name = None
 
-# --- 3. القائمة الجانبية ---
+# --- 3. القائمة الجانبية (البروفايل) ---
 with st.sidebar:
-    st.title("⚙️ الإعدادات")
-    st.success(f"✅ الحالة: متصل")
+    st.title("👤 ملف الطالب")
+    
+    # خانة الاسم (للحفظ والترحيب)
+    name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
+    if name_input:
+        st.session_state.student_name = name_input
+    
+    st.success(f"أهلاً بك، {st.session_state.student_name}!")
+    
+    st.markdown("---")
+    st.subheader("⚙️ الإعدادات")
 
     # المؤقت
-    st.markdown("---")
-    st.subheader("⏱️ مؤقت التركيز")
     now = datetime.now()
     active_study = False
     
@@ -140,7 +104,8 @@ with st.sidebar:
             st.rerun()
             
     if not active_study:
-        timer_mode = st.radio("الوضع:", ("دراسة 📖", "استراحة ☕"), horizontal=True)
+        st.write("⏱️ **مؤقت التركيز:**")
+        timer_mode = st.radio("الوضع:", ("دراسة 📖", "استراحة ☕"), horizontal=True, label_visibility="collapsed")
         if timer_mode == "دراسة 📖":
             minutes = st.slider("الوقت (دقيقة):", 10, 180, 60)
             if st.button("ابدأ 🚀"):
@@ -154,7 +119,7 @@ with st.sidebar:
                 for i in range(total_sec):
                     left = total_sec - i
                     m, s = divmod(left, 60)
-                    placeholder.markdown(f"<div class='break-timer'><span class='break-title'>☕ ريح عيونك شوية</span>{m:02d}:{s:02d}</div>", unsafe_allow_html=True)
+                    placeholder.markdown(f"<div class='break-timer'><span class='break-title'>☕ ريح عيونك</span>{m:02d}:{s:02d}</div>", unsafe_allow_html=True)
                     time.sleep(1)
                 placeholder.empty()
                 st.success("ارجع للدراسة!")
@@ -162,12 +127,29 @@ with st.sidebar:
     st.markdown("---")
     explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
 
+    # --- ميزة الحفظ (الجديدة) ---
+    st.markdown("---")
+    st.subheader("💾 حفظ المراجعة")
+    
+    # تحضير النص للتحميل
+    chat_history_text = f"مراجعة الطالب: {st.session_state.student_name}\nالتاريخ: {datetime.now().strftime('%Y-%m-%d')}\n\n"
+    for msg in st.session_state.messages:
+        role = "المعلم الذكي" if msg["role"] == "assistant" else st.session_state.student_name
+        content = msg["content"].replace("||SPLIT||", "\n\n--- الحلول ---\n")
+        chat_history_text += f"[{role}]:\n{content}\n\n{'='*40}\n\n"
+        
+    st.download_button(
+        label="📥 تحميل الملخص (TXT)",
+        data=chat_history_text,
+        file_name=f"study_summary_{st.session_state.student_name}.txt",
+        mime="text/plain"
+    )
+
     if st.button("مسح المحادثة 🗑️"):
         st.session_state.messages = []
         st.session_state.pdf_images = None
         st.rerun()
 
-    # حقوق المطور
     st.markdown("---")
     st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
 
@@ -202,19 +184,22 @@ def text_to_audio(text):
         return None
 
 # --- 5. الواجهة الرئيسية ---
-# عنوان بتصميم جديد
 st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #666;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
 
 if not api_key:
     st.error("⛔ يرجى إضافة المفتاح في إعدادات Secrets.")
 else:
+    # رسالة ترحيبية باسم الطالب
+    if not st.session_state.pdf_images:
+        st.info(f"هلا {st.session_state.student_name}! ارفع الملزمة وخلينا نبدي.")
+
     uploaded_file = st.file_uploader("ارفع ملف الـ PDF", type="pdf")
 
     if uploaded_file and st.session_state.pdf_images is None:
         with st.spinner("جاري تحليل الملف... ⏳"):
             try:
                 st.session_state.pdf_images = pdf_to_images(uploaded_file)
-                prompt = f"اشرح المحتوى بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
+                prompt = f"مرحبا، أنا الطالب {st.session_state.student_name}. اشرح لي المحتوى بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
                 resp = get_gemini_response(prompt, st.session_state.pdf_images)
                 st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": True})
             except Exception as e:
@@ -244,7 +229,8 @@ else:
             with st.chat_message("user"): st.markdown(prompt)
             with st.chat_message("assistant"):
                 with st.spinner("..."):
-                    resp = get_gemini_response(f"بأسلوب {explanation_style}: {prompt}", st.session_state.pdf_images)
+                    chat_prompt = f"المستخدم: {st.session_state.student_name}. السؤال: {prompt}. (الأسلوب: {explanation_style})"
+                    resp = get_gemini_response(chat_prompt, st.session_state.pdf_images)
                     st.markdown(resp)
             st.session_state.messages.append({"role": "assistant", "content": resp})
             st.rerun()
