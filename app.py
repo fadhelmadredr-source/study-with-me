@@ -154,14 +154,14 @@ with st.sidebar:
             st.session_state.trigger_flashcards = True 
             st.rerun()
         else:
-            st.toast("⚠️ ارفع ملف أولاً!", icon="📂")
+            st.toast("⚠️ ارفع صورة أو ملف أولاً!", icon="📂")
 
     if st.button("📝 اختبر معلوماتك (Quiz)"):
         if st.session_state.pdf_images or st.session_state.text_content:
             st.session_state.trigger_quiz = True
             st.rerun()
         else:
-            st.toast("⚠️ ارفع ملف أولاً!", icon="📂")
+            st.toast("⚠️ ارفع صورة أو ملف أولاً!", icon="📂")
 
     st.markdown("---")
     # المؤقت
@@ -268,7 +268,8 @@ st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #66
 if not api_key:
     st.warning("⚠️ الموقع بانتظار تفعيل المفتاح من المطور (Secrets).")
 else:
-    tab1, tab2 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص"])
+    # التبويبات الثلاثة (PDF, Text, Image)
+    tab1, tab2, tab3 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص", "📸 صورة سبورة/دفتر"])
 
     with tab1:
         uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
@@ -297,6 +298,26 @@ else:
                     resp = get_gemini_response(prompt, txt_input, is_images=False)
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
+
+    # --- تبويب الصور الجديد ---
+    with tab3:
+        uploaded_img = st.file_uploader("اختر صورة (سبورة، دفتر، ورقة)", type=["jpg", "png", "jpeg"], key="img_uploader")
+        if uploaded_img and st.button("تحليل الصورة 📸"):
+            if lottie_study: st_lottie(lottie_study, height=200, key="loading_img")
+            with st.spinner("جاري فحص الصورة..."):
+                try:
+                    img = Image.open(uploaded_img)
+                    st.session_state.pdf_images = [img] # نضعها في قائمة لتعامل معاملة الPDF
+                    st.session_state.text_content = None
+                    st.session_state.content_type = "image"
+                    
+                    # أمر خاص لخط اليد
+                    prompt = f"أنا {st.session_state.student_name}. هذه صورة (سبورة أو دفتر). اقرأ النص المكتوب بدقة، واشرحه لي بأسلوب ({explanation_style}). ثم ضع 3 أسئلة، واكتب ||SPLIT|| والحلول."
+                    resp = get_gemini_response(prompt, st.session_state.pdf_images, is_images=True)
+                    st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"خطأ في قراءة الصورة: {e}")
 
     # --- معالجة طلب البطاقات ---
     if "trigger_flashcards" in st.session_state and st.session_state.trigger_flashcards:
