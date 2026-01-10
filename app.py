@@ -20,7 +20,7 @@ PAGE_ICON = "🎓"
 LAYOUT = "wide"
 
 # ✅ هنا الحل: تعريف اسم الموديل بشكل صحيح
-MODEL_NAME = "gemini-1.5-flash"
+MODEL_NAME = "gemini-pro"
 
 THEMES = {
     "☀️ Light": {
@@ -605,3 +605,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
