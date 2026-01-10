@@ -6,8 +6,10 @@ import io
 from gtts import gTTS
 import time
 from datetime import datetime, timedelta
-import requests  # مكتبة جديدة لجلب الانميشن
-from streamlit_lottie import st_lottie  # مكتبة الانميشن
+import requests
+from streamlit_lottie import st_lottie
+# مكتبة المايكروفون الجديدة
+from streamlit_mic_recorder import speech_to_text
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
@@ -71,16 +73,15 @@ if "study_end_time" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
 
-# --- 4. دالة تحميل الأنميشن (الجديدة) ---
+# --- 4. دوال مساعدة ---
 def load_lottieurl(url):
-    r = requests.get(url)
-    if r.status_code != 200:
-        return None
-    return r.json()
+    try:
+        r = requests.get(url)
+        if r.status_code != 200: return None
+        return r.json()
+    except: return None
 
-# رابط انميشن (روبوت يقرأ كتاب)
 lottie_study = load_lottieurl("https://lottie.host/5a67b4eb-d731-417c-9b8b-871a9388319f/7Q0q9q9q9q.json") 
-# اذا الرابط الفوك ما اشتغل، هذا رابط احتياطي لروبوت عام:
 if not lottie_study:
     lottie_study = load_lottieurl("https://assets9.lottiefiles.com/packages/lf20_x17ybolp.json")
 
@@ -183,7 +184,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
 
-# --- 6. الدوال المساعدة ---
+# --- 6. الدوال الرئيسية ---
 def pdf_to_images(file):
     try:
         doc = fitz.open(stream=file.read(), filetype="pdf")
@@ -230,10 +231,8 @@ else:
     with tab1:
         uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
         if uploaded_file and st.button("تحليل الملف 🚀"):
-            # عرض الانميشن
             if lottie_study:
                 st_lottie(lottie_study, height=200, key="loading_pdf")
-            
             with st.spinner("جاري قراءة الملف..."):
                 st.session_state.pdf_images = pdf_to_images(uploaded_file)
                 st.session_state.text_content = None
@@ -248,10 +247,8 @@ else:
         txt_input = st.text_area("الصق النص هنا:", height=200)
         if st.button("شرح النص 📝"):
             if txt_input:
-                # عرض الانميشن
                 if lottie_study:
                     st_lottie(lottie_study, height=200, key="loading_text")
-
                 with st.spinner("جاري تحليل النص..."):
                     st.session_state.text_content = txt_input
                     st.session_state.pdf_images = None
@@ -263,10 +260,8 @@ else:
 
     # --- معالجة طلب البطاقات ---
     if "trigger_flashcards" in st.session_state and st.session_state.trigger_flashcards:
-        # عرض الانميشن
         if lottie_study:
             st_lottie(lottie_study, height=150, key="loading_flash")
-            
         with st.spinner("جاري صناعة البطاقات..."):
             flash_prompt = """
             استخرج أهم 5 مصطلحات وتعاريفها.
@@ -318,14 +313,39 @@ else:
                      aud = text_to_audio(msg["content"])
                      if aud: st.audio(aud, format='audio/mp3')
 
-    if prompt := st.chat_input("اسألني أو اطلب المزيد..."):
-        if not (st.session_state.pdf_images or st.session_state.text_content):
-            st.warning("يرجى رفع ملف أولاً!")
-        else:
+    # --- 9. منطقة الإدخال (كتابة + صوت) ---
+    if not (st.session_state.pdf_images or st.session_state.text_content):
+        st.info("💡 ارفع ملف لتبدأ...")
+    else:
+        # ترتيب المدخلات (صوت + كتابة)
+        col_mic, col_input = st.columns([1, 8])
+        
+        with col_mic:
+            st.write("") # مسافة
+            # زر المايكروفون
+            audio_text = speech_to_text(
+                language='ar',
+                start_prompt="🎤",
+                stop_prompt="⏹️",
+                just_once=True,
+                key='STT'
+            )
+        
+        prompt = None
+        # أولوية النص: اذا تكلمت ياخذ الصوت، اذا كتبت ياخذ الكتابة
+        if audio_text:
+            prompt = audio_text
+        
+        # خانة الكتابة العادية
+        chat_input_val = st.chat_input("اسألني أو اضغط المايك 🎤...")
+        if chat_input_val:
+            prompt = chat_input_val
+
+        # معالجة الطلب
+        if prompt:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             with st.chat_message("assistant"):
-                # عرض الانميشن أثناء الكتابة
                 if lottie_study:
                     st_lottie(lottie_study, height=100, key="loading_chat")
 
@@ -360,3 +380,5 @@ else:
                         "is_split": is_split,
                         "is_flashcard": is_flash
                     })
+            # ريفرش حتى يصفر المايك
+            st.rerun()
