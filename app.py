@@ -12,12 +12,15 @@ from streamlit_mic_recorder import speech_to_text
 import json
 import os
 import random
-from typing import List, Optional, Generator, Union, Any
+from typing import List, Optional, Union, Any
 
 # --- 1. Configuration & Constants ---
 PAGE_TITLE = "Study With Me"
 PAGE_ICON = "🎓"
 LAYOUT = "wide"
+
+# تعريف اسم الموديل هنا لتجنب خطأ NameError
+MODEL_NAME = "gemini-1.5-flash"
 
 THEMES = {
     "☀️ Light": {
@@ -149,7 +152,6 @@ def apply_theme(theme_name: str):
             padding: 1rem;
             margin-bottom: 0.8rem;
         }}
-        [data-testid="stChatMessage"].st-emotion-cache-12fmjuu {{ /* User message specific if needed */ }}
 
         /* Footer */
         .footer-container {{
@@ -213,8 +215,6 @@ def process_pdf(file_bytes: bytes) -> Optional[List[Image.Image]]:
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         images = []
-        # Import PIL here to ensure it's available in cached function scope if needed, 
-        # though globally imported usually fine.
         for page_num in range(min(5, len(doc))):
             page = doc.load_page(page_num)
             pix = page.get_pixmap()
@@ -293,7 +293,8 @@ def get_gemini_response(prompt: str, content_data: Any, is_images: bool = True) 
         if not api_key: return "⚠️ API Key not found. Please configure secrets."
         
         configure_genai(api_key)
-        model = genai.GenerativeModel(model_name)
+        # تم تصحيح الخطأ هنا باستخدام MODEL_NAME
+        model = genai.GenerativeModel(MODEL_NAME)
         
         content = [prompt] + content_data if is_images else [prompt + "\n\n" + str(content_data)]
         
@@ -527,8 +528,8 @@ def main():
                             with st.expander(f"📌 {t}"): st.info(d)
                         except: pass
                 if st.button("🔊 Play Audio", key=f"aud_{i}"):
-                     aud_bytes = text_to_audio_bytes(msg["content"].replace("||", " means "))
-                     if aud_bytes: st.audio(aud_bytes, format='audio/mp3')
+                      aud_bytes = text_to_audio_bytes(msg["content"].replace("||", " means "))
+                      if aud_bytes: st.audio(aud_bytes, format='audio/mp3')
 
             elif msg.get("is_split") or "||SPLIT||" in str(msg["content"]):
                 parts = msg["content"].split("||SPLIT||")
@@ -542,8 +543,8 @@ def main():
             else:
                 st.markdown(msg["content"])
                 if role == "assistant" and st.button("🔊 Play", key=f"aud_{i}"):
-                     aud_bytes = text_to_audio_bytes(msg["content"])
-                     if aud_bytes: st.audio(aud_bytes, format='audio/mp3')
+                      aud_bytes = text_to_audio_bytes(msg["content"])
+                      if aud_bytes: st.audio(aud_bytes, format='audio/mp3')
 
     # Chat Input
     # Only enable chat if content is loaded
@@ -604,5 +605,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
