@@ -3,7 +3,8 @@ import fitz  # PyMuPDF
 from PIL import Image
 import google.generativeai as genai
 import io
-from gtts import gTTS  # مكتبة الصوت الجديدة
+from gtts import gTTS
+import time  # مكتبة الوقت للمؤقت
 
 # --- 1. تصميم الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
@@ -16,11 +17,10 @@ custom_css = """
     .stButton>button { background-color: #f0f2f6; color: #31333F; border-radius: 8px; border: 1px solid #d6d6d6; }
     .stButton>button:hover { background-color: #e0e2e6; }
     a { color: #0066cc !important; text-decoration: none; }
-    
-    .footer {
-        position: fixed; left: 0; bottom: 0; width: 100%;
-        background-color: #f9f9f9; color: #555; text-align: center;
-        padding: 10px; font-size: 14px; border-top: 1px solid #ddd; z-index: 100;
+    /* تنسيق العداد */
+    .timer-box {
+        font-size: 40px; font-weight: bold; text-align: center; color: #ff4b4b;
+        background-color: #f0f0f0; padding: 10px; border-radius: 10px; margin-bottom: 10px;
     }
 </style>
 """
@@ -36,16 +36,53 @@ if "pdf_images" not in st.session_state:
 with st.sidebar:
     st.title("⚙️ الإعدادات")
     
-    with st.expander("❓ ما عندك مفتاح؟ اضغط هنا"):
-        st.markdown("1. احصل عليه من [Google AI Studio](https://aistudio.google.com/app/apikey).\n2. الصقه بالأسفل.")
+    with st.expander("❓ تعليمات المفتاح"):
+        st.markdown("احصل عليه من [Google AI Studio](https://aistudio.google.com/app/apikey).")
     
     api_key = st.text_input("مفتاح Gemini API:", type="password")
-    
+
+    # --- ميزة المؤقت (الجديدة) ---
     st.markdown("---")
-    st.subheader("🎨 أسلوب المعلم")
+    st.subheader("⏱️ مؤقت التركيز")
+    
+    # اختيار نوع المؤقت (دراسة أو راحة)
+    timer_mode = st.radio("الوضع:", ("دراسة 📖", "استراحة ☕"), horizontal=True)
+    
+    # تحديد الوقت (بالدقائق)
+    if timer_mode == "دراسة 📖":
+        minutes = st.slider("مدة الدراسة (دقيقة):", 10, 180, 120) # الافتراضي ساعتين
+    else:
+        minutes = st.slider("مدة الاستراحة (دقيقة):", 5, 60, 30) # الافتراضي نص ساعة
+
+    if st.button("ابدأ المؤقت ⏳"):
+        # مكان عرض العداد
+        timer_placeholder = st.empty()
+        bar = st.progress(0)
+        
+        total_seconds = minutes * 60
+        
+        for i in range(total_seconds):
+            # حساب الوقت المتبقي
+            time_left = total_seconds - i
+            mins, secs = divmod(time_left, 60)
+            timer_text = f"{mins:02d}:{secs:02d}"
+            
+            # تحديث الشاشة
+            timer_placeholder.markdown(f"<div class='timer-box'>{timer_text}</div>", unsafe_allow_html=True)
+            bar.progress((i + 1) / total_seconds)
+            time.sleep(1) # انتظار ثانية
+            
+        # عند انتهاء الوقت
+        timer_placeholder.markdown("<div class='timer-box'>⏰ انتهى الوقت!</div>", unsafe_allow_html=True)
+        bar.progress(100)
+        st.balloons() # احتفال
+        st.success("عاشت ايدك! كملت الجلسة بنجاح.")
+
+    # --- باقي الإعدادات ---
+    st.markdown("---")
     explanation_style = st.selectbox(
-        "كيف تحب اشرحلك؟",
-        ("شرح مبسط (سوالف عراقية)", "شرح أكاديمي (للامتحان)", "رؤوس أقلام (مراجعة سريعة)", "شرح للأطفال (مبسط جداً)")
+        "أسلوب الشرح:",
+        ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام")
     )
     
     selected_model_name = None
@@ -56,11 +93,9 @@ with st.sidebar:
             default_ix = next((i for i, m in enumerate(models) if 'flash' in m), 0)
             if models:
                 selected_model_name = st.selectbox("الموديل:", models, index=default_ix)
-                st.success("✅ المفتاح شغال")
         except:
-            st.error("المفتاح غير صحيح")
+            pass
 
-    st.markdown("---")
     if st.button("مسح المحادثة 🗑️"):
         st.session_state.messages = []
         st.session_state.pdf_images = None
@@ -86,98 +121,57 @@ def get_gemini_response(prompt, images):
     response = model.generate_content(content)
     return response.text
 
-# --- دالة تحويل النص إلى صوت ---
 def text_to_audio(text):
     try:
-        # تنظيف النص من الرموز المزعجة قبل القراءة
         clean_text = text.replace("*", "").replace("#", "").replace("-", "")
-        # إنشاء ملف صوتي في الذاكرة
         tts = gTTS(text=clean_text, lang='ar')
         audio_fp = io.BytesIO()
         tts.write_to_fp(audio_fp)
         return audio_fp
-    except Exception as e:
+    except:
         return None
 
 # --- 5. الواجهة الرئيسية ---
 st.title("Study With Me 🎓")
-st.write(f"نظام الشرح المختار: **{explanation_style}**")
 
 uploaded_file = st.file_uploader("ارفع ملف الـ PDF", type="pdf")
 
 if uploaded_file and st.session_state.pdf_images is None:
     if api_key and selected_model_name:
-        with st.spinner("جاري تحليل الصور... ⏳"):
+        with st.spinner("جاري التحليل..."):
             try:
                 st.session_state.pdf_images = pdf_to_images(uploaded_file)
-                
-                initial_prompt = f"""
-                أنت معلم ذكي. اشرح محتوى الصور بأسلوب: ({explanation_style}).
-                
-                التعليمات:
-                1. ابدأ بالشرح المفصل.
-                2. ضع 3 أسئلة (MCQ) لاختبار الطالب.
-                3. اكتب كلمة "||SPLIT||"
-                4. بعد الكلمة، اكتب الحلول الصحيحة.
-                """
-                
-                full_response = get_gemini_response(initial_prompt, st.session_state.pdf_images)
-                st.session_state.messages.append({"role": "assistant", "content": full_response, "is_split": True})
-                
+                prompt = f"اشرح المحتوى بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
+                resp = get_gemini_response(prompt, st.session_state.pdf_images)
+                st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": True})
             except Exception as e:
-                st.error(f"حدث خطأ: {e}")
+                st.error(f"خطأ: {e}")
 
-# --- 6. عرض المحادثة (مع الصوت) ---
-for i, message in enumerate(st.session_state.messages):
-    if message["role"] == "user":
-        with st.chat_message("user"):
-            st.markdown(message["content"])
-    else:
-        with st.chat_message("assistant"):
-            content_to_show = message["content"]
-            audio_text = content_to_show # النص اللي راح ينقري
-            
-            # معالجة التقسيم (الأسئلة والأجوبة)
-            if message.get("is_split", False) and "||SPLIT||" in message["content"]:
-                parts = message["content"].split("||SPLIT||")
-                content_to_show = parts[0]
-                audio_text = parts[0] # نقرأ بس الشرح والأسئلة (بدون الحل)
-                
-                st.markdown(content_to_show)
-                
-                # زر تشغيل الصوت للشرح
-                if st.button(f"🔊 استمع للشرح", key=f"audio_{i}"):
-                    with st.spinner("جاري توليد الصوت..."):
-                        audio_file = text_to_audio(audio_text)
-                        if audio_file:
-                            st.audio(audio_file, format='audio/mp3')
-                
-                # إظهار الحلول المخفية
-                with st.expander("👁️ إظهار الإجابات الصحيحة"):
-                    st.info(parts[1])
-            else:
-                # رسالة عادية
-                st.markdown(content_to_show)
-                if st.button(f"🔊 قراءة الرد", key=f"audio_{i}"):
-                    with st.spinner("جاري توليد الصوت..."):
-                        audio_file = text_to_audio(content_to_show)
-                        if audio_file:
-                            st.audio(audio_file, format='audio/mp3')
+# --- 6. الشات ---
+for i, msg in enumerate(st.session_state.messages):
+    role = msg["role"]
+    with st.chat_message(role):
+        if msg.get("is_split"):
+            parts = msg["content"].split("||SPLIT||")
+            st.markdown(parts[0])
+            if st.button("🔊 استمع", key=f"aud_{i}"):
+                aud = text_to_audio(parts[0])
+                if aud: st.audio(aud, format='audio/mp3')
+            with st.expander("👁️ الحل"):
+                st.info(parts[1])
+        else:
+            st.markdown(msg["content"])
+            if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
+                 aud = text_to_audio(msg["content"])
+                 if aud: st.audio(aud, format='audio/mp3')
 
-# --- 7. الشات التفاعلي ---
-if prompt := st.chat_input("اسألني عن المادة..."):
-    if not st.session_state.pdf_images:
-        st.warning("ارفع الملف اول شي!")
-    else:
+if prompt := st.chat_input("اسألني..."):
+    if st.session_state.pdf_images:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
+        with st.chat_message("user"): st.markdown(prompt)
         with st.chat_message("assistant"):
-            with st.spinner("ديكتب..."):
-                chat_prompt = f"بأسلوب ({explanation_style})، جاوب: {prompt}"
-                response_text = get_gemini_response(chat_prompt, st.session_state.pdf_images)
-                st.markdown(response_text)
-                
-        st.session_state.messages.append({"role": "assistant", "content": response_text, "is_split": False})
-        st.rerun() # إعادة تحميل الصفحة لإظهار زر الصوت الجديد
+            with st.spinner("..."):
+                resp = get_gemini_response(f"بأسلوب {explanation_style}: {prompt}", st.session_state.pdf_images)
+                st.markdown(resp)
+        st.session_state.messages.append({"role": "assistant", "content": resp})
+        st.rerun()
