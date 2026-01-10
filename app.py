@@ -7,10 +7,10 @@ from gtts import gTTS
 import time
 from datetime import datetime, timedelta
 
-# --- 1. تصميم الصفحة ---
+# --- 1. إعدادات الصفحة الأساسية ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
-# --- CSS (التصميم الخاص) ---
+# --- 2. التصميم (CSS) ---
 custom_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
@@ -48,33 +48,40 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# --- 2. إدارة الذاكرة ---
+# --- 3. تهيئة الذاكرة (Session State) ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pdf_images" not in st.session_state:
     st.session_state.pdf_images = None
 if "study_end_time" not in st.session_state:
     st.session_state.study_end_time = None
-# متغيرات الطالب الجديدة
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
 
-# جلب المفتاح
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
-    models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    selected_model_name = next((m for m in models if 'flash' in m), "models/gemini-1.5-flash")
-except Exception as e:
-    st.error("⚠️ يرجى التأكد من وضع المفتاح في Secrets.")
-    api_key = None
-    selected_model_name = None
+# --- 4. إعداد الاتصال والمفتاح (Error Handling) ---
+api_key = None
+selected_model_name = None
 
-# --- 3. القائمة الجانبية (البروفايل) ---
+try:
+    # التأكد من وجود المفتاح في الأسرار
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        genai.configure(api_key=api_key)
+        
+        # محاولة جلب الموديلات
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # البحث عن Flash وتعيينه كافتراضي
+        selected_model_name = next((m for m in models if 'flash' in m), "models/gemini-1.5-flash")
+    else:
+        st.warning("⚠️ المفتاح غير موجود في Secrets. يرجى إضافته.")
+except Exception as e:
+    st.error(f"⚠️ خطأ في الاتصال بـ Google API: {e}")
+
+# --- 5. القائمة الجانبية ---
 with st.sidebar:
     st.title("👤 ملف الطالب")
     
-    # خانة الاسم (للحفظ والترحيب)
+    # اسم الطالب
     name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
     if name_input:
         st.session_state.student_name = name_input
@@ -84,7 +91,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("⚙️ الإعدادات")
 
-    # المؤقت
+    # منطق المؤقت
     now = datetime.now()
     active_study = False
     
@@ -127,15 +134,14 @@ with st.sidebar:
     st.markdown("---")
     explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
 
-    # --- ميزة الحفظ (الجديدة) ---
+    # ميزة الحفظ
     st.markdown("---")
     st.subheader("💾 حفظ المراجعة")
     
-    # تحضير النص للتحميل
     chat_history_text = f"مراجعة الطالب: {st.session_state.student_name}\nالتاريخ: {datetime.now().strftime('%Y-%m-%d')}\n\n"
     for msg in st.session_state.messages:
         role = "المعلم الذكي" if msg["role"] == "assistant" else st.session_state.student_name
-        content = msg["content"].replace("||SPLIT||", "\n\n--- الحلول ---\n")
+        content = str(msg["content"]).replace("||SPLIT||", "\n\n--- الحلول ---\n")
         chat_history_text += f"[{role}]:\n{content}\n\n{'='*40}\n\n"
         
     st.download_button(
@@ -153,43 +159,53 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
 
-# --- 4. الدوال ---
+# --- 6. الدوال المساعدة ---
 def pdf_to_images(file):
-    doc = fitz.open(stream=file.read(), filetype="pdf")
-    images = []
-    for page_num in range(min(5, len(doc))):
-        page = doc.load_page(page_num)
-        pix = page.get_pixmap()
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
-        images.append(img)
-    return images
+    try:
+        doc = fitz.open(stream=file.read(), filetype="pdf")
+        images = []
+        # قراءة 5 صفحات كحد أقصى لتجنب بطء الموقع
+        for page_num in range(min(5, len(doc))):
+            page = doc.load_page(page_num)
+            pix = page.get_pixmap()
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            images.append(img)
+        return images
+    except Exception as e:
+        st.error(f"خطأ في قراءة الملف: {e}")
+        return None
 
 def get_gemini_response(prompt, images):
     try:
+        if not api_key: return "يرجى التحقق من المفتاح."
         model = genai.GenerativeModel(selected_model_name)
         content = [prompt] + images
         response = model.generate_content(content)
         return response.text
     except Exception as e:
-        return f"خطأ في الاتصال: {e}"
+        return f"حدث خطأ أثناء المعالجة: {e}"
 
 def text_to_audio(text):
     try:
+        if not text or len(text.strip()) == 0: return None
         clean_text = text.replace("*", "").replace("#", "").replace("-", "")
         tts = gTTS(text=clean_text, lang='ar')
         audio_fp = io.BytesIO()
         tts.write_to_fp(audio_fp)
+        audio_fp.seek(0)
         return audio_fp
-    except:
+    except Exception as e:
+        st.warning("تعذر توليد الصوت للنص المحدد.")
         return None
 
-# --- 5. الواجهة الرئيسية ---
+# --- 7. الواجهة الرئيسية ---
 st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #666;'>رفيقك الذكي للدراسة</span></h1>", unsafe_allow_html=True)
 
 if not api_key:
-    st.error("⛔ يرجى إضافة المفتاح في إعدادات Secrets.")
+    st.error("⛔ الموقع لا يعمل لأن مفتاح API مفقود في إعدادات Secrets.")
+    st.info("اذهب إلى Settings > Secrets وأضف: GEMINI_API_KEY = 'مفتاحك'")
 else:
-    # رسالة ترحيبية باسم الطالب
+    # رسالة ترحيبية
     if not st.session_state.pdf_images:
         st.info(f"هلا {st.session_state.student_name}! ارفع الملزمة وخلينا نبدي.")
 
@@ -197,15 +213,14 @@ else:
 
     if uploaded_file and st.session_state.pdf_images is None:
         with st.spinner("جاري تحليل الملف... ⏳"):
-            try:
-                st.session_state.pdf_images = pdf_to_images(uploaded_file)
+            st.session_state.pdf_images = pdf_to_images(uploaded_file)
+            if st.session_state.pdf_images:
                 prompt = f"مرحبا، أنا الطالب {st.session_state.student_name}. اشرح لي المحتوى بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
                 resp = get_gemini_response(prompt, st.session_state.pdf_images)
                 st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": True})
-            except Exception as e:
-                st.error(f"خطأ: {e}")
+                st.rerun()
 
-    # --- 6. الشات ---
+    # عرض الرسائل
     for i, msg in enumerate(st.session_state.messages):
         role = msg["role"]
         with st.chat_message(role):
@@ -216,13 +231,14 @@ else:
                     aud = text_to_audio(parts[0])
                     if aud: st.audio(aud, format='audio/mp3')
                 with st.expander("👁️ الحل"):
-                    st.info(parts[1])
+                    if len(parts) > 1: st.info(parts[1])
             else:
                 st.markdown(msg["content"])
                 if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
                      aud = text_to_audio(msg["content"])
                      if aud: st.audio(aud, format='audio/mp3')
 
+    # خانة الإدخال
     if prompt := st.chat_input("اسألني..."):
         if st.session_state.pdf_images:
             st.session_state.messages.append({"role": "user", "content": prompt})
