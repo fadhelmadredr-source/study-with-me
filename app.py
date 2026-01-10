@@ -8,8 +8,8 @@ import time
 from datetime import datetime, timedelta
 import requests
 from streamlit_lottie import st_lottie
-# مكتبة المايكروفون الجديدة
 from streamlit_mic_recorder import speech_to_text
+import json
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
@@ -43,18 +43,17 @@ custom_css = """
 
     section[data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e0e0e0; }
     
-    .break-timer {
-        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        background-color: rgba(0,0,0,0.95); color: #fff; padding: 60px;
-        border-radius: 30px; font-size: 90px; font-weight: bold; z-index: 9999;
-        text-align: center; width: 80%; box-shadow: 0 0 50px rgba(0,0,0,0.5);
-    }
     .study-timer-box {
         border: 2px solid #4CAF50; background-color: #e8f5e9; color: #2e7d32;
         padding: 15px; border-radius: 12px; text-align: center; font-weight: bold;
         margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     .footer-text { text-align: center; color: #6c757d; font-size: 14px; margin-top: 20px; font-family: 'Cairo', sans-serif; }
+    
+    /* تنسيق الكويز */
+    .quiz-container { background-color: white; padding: 20px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .correct-ans { color: green; font-weight: bold; }
+    .wrong-ans { color: red; font-weight: bold; }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -72,6 +71,11 @@ if "study_end_time" not in st.session_state:
     st.session_state.study_end_time = None
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
+# متغيرات الكويز
+if "quiz_data" not in st.session_state:
+    st.session_state.quiz_data = None
+if "quiz_score" not in st.session_state:
+    st.session_state.quiz_score = 0
 
 # --- 4. دوال مساعدة ---
 def load_lottieurl(url):
@@ -84,6 +88,42 @@ def load_lottieurl(url):
 lottie_study = load_lottieurl("https://lottie.host/5a67b4eb-d731-417c-9b8b-871a9388319f/7Q0q9q9q9q.json") 
 if not lottie_study:
     lottie_study = load_lottieurl("https://assets9.lottiefiles.com/packages/lf20_x17ybolp.json")
+
+def create_html_report(messages, student_name):
+    html = f"""
+    <html dir="rtl" lang="ar">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f9f9f9; }}
+            .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
+            h1 {{ color: #1a73e8; text-align: center; border-bottom: 2px solid #eee; padding-bottom: 10px; }}
+            .message {{ margin-bottom: 20px; padding: 15px; border-radius: 10px; }}
+            .user {{ background-color: #e8f0fe; color: #1a73e8; border-right: 5px solid #1a73e8; }}
+            .bot {{ background-color: #f1f3f4; color: #202124; border-right: 5px solid #34a853; }}
+            .timestamp {{ font-size: 0.8em; color: #666; text-align: left; margin-top: 5px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>📄 ملخص مراجعة: {student_name}</h1>
+            <p style="text-align: center; color: #666;">التاريخ: {datetime.now().strftime('%Y-%m-%d')}</p>
+            <hr>
+    """
+    for msg in messages:
+        role_class = "user" if msg["role"] == "user" else "bot"
+        role_name = student_name if msg["role"] == "user" else "المعلم الذكي"
+        content = str(msg["content"]).replace("||SPLIT||", "<br><b>--- الحل ---</b><br>").replace("||FLASH||", "")
+        # تنظيف النص من JSON اذا ظهر
+        if "```json" not in content:
+            html += f"""
+            <div class="message {role_class}">
+                <strong>{role_name}:</strong><br>
+                {content}
+            </div>
+            """
+    html += "</div></body></html>"
+    return html
 
 # --- 5. القائمة الجانبية ---
 with st.sidebar:
@@ -115,12 +155,23 @@ with st.sidebar:
     
     st.markdown("---")
     st.write("🧠 **أدوات ذكية:**")
+    
+    # زر البطاقات
     if st.button("🃏 اصنع بطاقات مراجعة"):
         if st.session_state.pdf_images or st.session_state.text_content:
             st.session_state.messages.append({"role": "user", "content": "اريد بطاقات مراجعة (Flashcards)."})
             st.session_state.trigger_flashcards = True 
+            st.rerun()
         else:
-            st.toast("⚠️ ارفع ملف أو نص أولاً!", icon="📂")
+            st.toast("⚠️ ارفع ملف أولاً!", icon="📂")
+
+    # زر الكويز الجديد
+    if st.button("📝 اختبر معلوماتك (Quiz)"):
+        if st.session_state.pdf_images or st.session_state.text_content:
+            st.session_state.trigger_quiz = True
+            st.rerun()
+        else:
+            st.toast("⚠️ ارفع ملف أولاً!", icon="📂")
 
     st.markdown("---")
     # المؤقت
@@ -166,19 +217,21 @@ with st.sidebar:
     explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
 
     st.markdown("---")
-    # زر التحميل
-    chat_history_text = f"مراجعة: {st.session_state.student_name}\nالتاريخ: {datetime.now().strftime('%Y-%m-%d')}\n\n"
-    for msg in st.session_state.messages:
-        role = "المعلم" if msg["role"] == "assistant" else st.session_state.student_name
-        content = str(msg["content"]).replace("||SPLIT||", "\n--- الحلول ---\n").replace("||FLASH||", "")
-        chat_history_text += f"[{role}]:\n{content}\n{'='*30}\n"
-    st.download_button("📥 تحميل الملخص (TXT)", chat_history_text, f"summary_{st.session_state.student_name}.txt")
+    # زر تحميل التقرير المطور
+    html_report = create_html_report(st.session_state.messages, st.session_state.student_name)
+    st.download_button(
+        label="📥 تحميل الملخص (HTML ملون)",
+        data=html_report,
+        file_name=f"study_summary_{st.session_state.student_name}.html",
+        mime="text/html"
+    )
 
     if st.button("مسح المحادثة 🗑️"):
         st.session_state.messages = []
         st.session_state.pdf_images = None
         st.session_state.text_content = None
         st.session_state.content_type = None
+        st.session_state.quiz_data = None
         st.rerun()
 
     st.markdown("---")
@@ -264,9 +317,7 @@ else:
             st_lottie(lottie_study, height=150, key="loading_flash")
         with st.spinner("جاري صناعة البطاقات..."):
             flash_prompt = """
-            استخرج أهم 5 مصطلحات وتعاريفها.
-            الصيغة:
-            المصطلح || التعريف
+            استخرج أهم 5 مصطلحات وتعاريفها. الصيغة: المصطلح || التعريف
             """
             if st.session_state.content_type == "image":
                 resp = get_gemini_response(flash_prompt, st.session_state.pdf_images, is_images=True)
@@ -278,77 +329,111 @@ else:
             st.session_state.trigger_flashcards = False
             st.rerun()
 
+    # --- معالجة الكويز (الجديد) ---
+    if "trigger_quiz" in st.session_state and st.session_state.trigger_quiz:
+        if lottie_study: st_lottie(lottie_study, height=150, key="loading_quiz")
+        with st.spinner("جاري إعداد الأسئلة..."):
+            quiz_prompt = """
+            قم بإنشاء 3 أسئلة اختيار من متعدد (MCQ) من المحتوى.
+            يجب أن يكون الإخراج بتنسيق JSON حصراً كالتالي:
+            [
+                {"question": "السؤال الأول؟", "options": ["ا", "ب", "ج", "د"], "answer": "الجواب الصحيح", "explanation": "التوضيح"},
+                ...
+            ]
+            لا تستخدم Markdown block. فقط JSON raw text.
+            """
+            if st.session_state.content_type == "image":
+                resp = get_gemini_response(quiz_prompt, st.session_state.pdf_images, is_images=True)
+            else:
+                context = f"النص: {st.session_state.text_content}\n\n{quiz_prompt}"
+                resp = get_gemini_response(context, "", is_images=False)
+            
+            try:
+                # تنظيف النص لمحاولة استخراج JSON
+                cleaned_json = resp.replace("```json", "").replace("```", "").strip()
+                st.session_state.quiz_data = json.loads(cleaned_json)
+            except:
+                st.error("عذراً، حدث خطأ في بناء الكويز. حاول مرة أخرى.")
+            
+            st.session_state.trigger_quiz = False
+            st.rerun()
+
     # --- 8. الشات وعرض الرسائل ---
     for i, msg in enumerate(st.session_state.messages):
         role = msg["role"]
         with st.chat_message(role):
             if msg.get("is_flashcard"):
-                st.markdown("### 🃏 بطاقات المراجعة السريعة")
+                st.markdown("### 🃏 بطاقات المراجعة")
                 lines = msg["content"].split('\n')
                 for line in lines:
                     if "||" in line:
                         try:
                             term, definition = line.split("||")
-                            term = term.replace("FLASH", "").replace("|", "").strip()
-                            definition = definition.replace("FLASH", "").replace("|", "").strip()
-                            if term and definition:
-                                with st.expander(f"📌 {term}"):
-                                    st.info(definition)
+                            with st.expander(f"📌 {term}"): st.info(definition)
                         except: pass
-                if st.button("🔊 اقرأ البطاقات", key=f"aud_{i}"):
+                if st.button("🔊 اقرأ", key=f"aud_{i}"):
                      aud = text_to_audio(msg["content"].replace("||", " تعني "))
                      if aud: st.audio(aud, format='audio/mp3')
 
             elif msg.get("is_split") or "||SPLIT||" in str(msg["content"]):
                 parts = msg["content"].split("||SPLIT||")
                 st.markdown(parts[0])
-                if st.button("🔊 استمع", key=f"aud_{i}"):
+                if st.button("🔊", key=f"aud_{i}"):
                     aud = text_to_audio(parts[0])
                     if aud: st.audio(aud, format='audio/mp3')
-                with st.expander("👁️ الحل"):
-                    if len(parts) > 1: st.info(parts[1])
+                with st.expander("👁️ الحل"): st.info(parts[1])
             else:
                 st.markdown(msg["content"])
                 if role == "assistant" and st.button("🔊", key=f"aud_{i}"):
                      aud = text_to_audio(msg["content"])
                      if aud: st.audio(aud, format='audio/mp3')
 
-    # --- 9. منطقة الإدخال (كتابة + صوت) ---
+    # --- عرض الكويز (في حال وجوده) ---
+    if st.session_state.quiz_data:
+        st.divider()
+        st.subheader("🧠 اختبر معلوماتك")
+        score = 0
+        for idx, q in enumerate(st.session_state.quiz_data):
+            st.markdown(f"**س{idx+1}: {q['question']}**")
+            user_choice = st.radio(f"اختر الإجابة:", q['options'], key=f"q_{idx}", index=None)
+            
+            if user_choice:
+                if user_choice == q['answer']:
+                    st.success("✅ إجابة صحيحة!")
+                    score += 1
+                else:
+                    st.error(f"❌ خطأ. الإجابة الصحيحة: {q['answer']}")
+                    st.info(f"💡 توضيح: {q['explanation']}")
+            st.write("---")
+        
+        if st.button("إنهاء الاختبار"):
+            final_score = (score / len(st.session_state.quiz_data)) * 100
+            if final_score == 100:
+                st.balloons()
+                st.success(f"🎉 واو! درجة كاملة {score}/{len(st.session_state.quiz_data)}")
+            elif final_score >= 50:
+                st.success(f"👏 جيد جداً! درجتك {score}/{len(st.session_state.quiz_data)}")
+            else:
+                st.warning(f"😅 تحتاج مراجعة. درجتك {score}/{len(st.session_state.quiz_data)}")
+            st.session_state.quiz_data = None # اخفاء الكويز بعد الحل
+            st.rerun()
+
+    # --- 9. منطقة الإدخال ---
     if not (st.session_state.pdf_images or st.session_state.text_content):
         st.info("💡 ارفع ملف لتبدأ...")
     else:
-        # ترتيب المدخلات (صوت + كتابة)
         col_mic, col_input = st.columns([1, 8])
-        
         with col_mic:
-            st.write("") # مسافة
-            # زر المايكروفون
-            audio_text = speech_to_text(
-                language='ar',
-                start_prompt="🎤",
-                stop_prompt="⏹️",
-                just_once=True,
-                key='STT'
-            )
+            st.write("") 
+            audio_text = speech_to_text(language='ar', start_prompt="🎤", stop_prompt="⏹️", just_once=True, key='STT')
         
-        prompt = None
-        # أولوية النص: اذا تكلمت ياخذ الصوت، اذا كتبت ياخذ الكتابة
-        if audio_text:
-            prompt = audio_text
-        
-        # خانة الكتابة العادية
-        chat_input_val = st.chat_input("اسألني أو اضغط المايك 🎤...")
-        if chat_input_val:
-            prompt = chat_input_val
+        prompt = audio_text if audio_text else st.chat_input("اسألني...")
 
-        # معالجة الطلب
         if prompt:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             with st.chat_message("assistant"):
-                if lottie_study:
-                    st_lottie(lottie_study, height=100, key="loading_chat")
-
+                if lottie_study: st_lottie(lottie_study, height=100, key="loading_chat")
                 with st.spinner("..."):
                     chat_instructions = f"""
                     المستخدم: {st.session_state.student_name}
@@ -375,10 +460,7 @@ else:
                         st.markdown(resp)
                         
                     st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": resp, 
-                        "is_split": is_split,
-                        "is_flashcard": is_flash
+                        "role": "assistant", "content": resp, 
+                        "is_split": is_split, "is_flashcard": is_flash
                     })
-            # ريفرش حتى يصفر المايك
             st.rerun()
