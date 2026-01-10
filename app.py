@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
 
-# --- 2. التصميم (CSS) - إخفاء زر GitHub والهوامش ---
+# --- 2. التصميم (CSS) ---
 custom_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
@@ -57,7 +57,7 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# --- 3. تهيئة الذاكرة (Session State) ---
+# --- 3. تهيئة الذاكرة ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pdf_images" not in st.session_state:
@@ -71,49 +71,33 @@ if "study_end_time" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state.student_name = "يا بطل"
 
-# --- 4. القائمة الجانبية والإعدادات ---
+# --- 4. القائمة الجانبية ---
 with st.sidebar:
     st.title("⚙️ الإعدادات")
     
-    # >>> التعديل الجديد: كشف الموديلات تلقائياً <<<
     api_key = None
-    selected_model_name = None
+    selected_model_name = "models/gemini-1.5-flash"
 
     try:
-        # 1. جلب المفتاح من الأسرار
         if "GEMINI_API_KEY" in st.secrets:
             api_key = st.secrets["GEMINI_API_KEY"]
             genai.configure(api_key=api_key)
             
-            # 2. جلب قائمة الموديلات المتاحة فعلياً للحساب
+            # محاولة كشف الموديلات تلقائياً
             available_models = []
             for m in genai.list_models():
                 if 'generateContent' in m.supported_generation_methods:
                     available_models.append(m.name)
             
-            # 3. اختيار أفضل موديل (Flash ثم Pro ثم أي شيء)
             if available_models:
-                # محاولة إيجاد Flash
                 flash_model = next((m for m in available_models if 'flash' in m), None)
-                # محاولة إيجاد Pro 1.5
                 pro_model = next((m for m in available_models if '1.5-pro' in m), None)
-                
-                if flash_model:
-                    selected_model_name = flash_model
-                elif pro_model:
-                    selected_model_name = pro_model
-                else:
-                    selected_model_name = available_models[0] # أول واحد متاح
-                
-                # st.success(f"✅ تم تفعيل الموديل: {selected_model_name}")
-            else:
-                st.error("⚠️ لم يتم العثور على موديلات متاحة لهذا المفتاح.")
+                selected_model_name = flash_model if flash_model else (pro_model if pro_model else available_models[0])
         else:
             st.error("⚠️ المفتاح غير موجود في Secrets!")
     except Exception as e:
         st.error(f"⚠️ خطأ في الاتصال: {e}")
 
-    # باقي القائمة الجانبية
     st.subheader("👤 ملف الطالب")
     name_input = st.text_input("اسمك الكريم:", value=st.session_state.student_name)
     if name_input: st.session_state.student_name = name_input
@@ -180,7 +164,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("<div class='footer-text'>Designed with 🎨 by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
 
-# --- 5. الدوال المساعدة ---
+# --- 5. الدوال ---
 def pdf_to_images(file):
     try:
         doc = fitz.open(stream=file.read(), filetype="pdf")
@@ -195,9 +179,6 @@ def pdf_to_images(file):
 
 def get_gemini_response(prompt, content_data, is_images=True):
     try:
-        if not selected_model_name:
-            return "⚠️ لم يتم تحديد موديل. تأكد من صحة المفتاح."
-        
         model = genai.GenerativeModel(selected_model_name)
         if is_images:
             content = [prompt] + content_data
@@ -205,7 +186,7 @@ def get_gemini_response(prompt, content_data, is_images=True):
             content = [prompt + "\n\n" + content_data]
         response = model.generate_content(content)
         return response.text
-    except Exception as e: return f"حدث خطأ أثناء التوليد: {e}"
+    except Exception as e: return f"حدث خطأ: {e}"
 
 def text_to_audio(text):
     try:
@@ -224,7 +205,6 @@ st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #66
 if not api_key:
     st.warning("⚠️ الموقع بانتظار تفعيل المفتاح من المطور (Secrets).")
 else:
-    # التبويبات
     tab1, tab2 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص"])
 
     with tab1:
@@ -235,6 +215,7 @@ else:
                 st.session_state.text_content = None
                 st.session_state.content_type = "image"
                 if st.session_state.pdf_images:
+                    # الأمر الأولي
                     prompt = f"أنا {st.session_state.student_name}. اشرح لي الصور بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
                     resp = get_gemini_response(prompt, st.session_state.pdf_images, is_images=True)
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
@@ -248,16 +229,18 @@ else:
                     st.session_state.text_content = txt_input
                     st.session_state.pdf_images = None
                     st.session_state.content_type = "text"
+                    # الأمر الأولي
                     prompt = f"أنا {st.session_state.student_name}. اشرح لي هذا النص بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
                     resp = get_gemini_response(prompt, txt_input, is_images=False)
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
 
-    # --- 7. الشات وعرض الرسائل ---
+    # --- 7. الشات المطور (Fix) ---
     for i, msg in enumerate(st.session_state.messages):
         role = msg["role"]
         with st.chat_message(role):
-            if msg.get("is_split"):
+            # اذا الرسالة تحتوي على فاصل، نعرضها مقسومة
+            if msg.get("is_split") or "||SPLIT||" in str(msg["content"]):
                 parts = msg["content"].split("||SPLIT||")
                 st.markdown(parts[0])
                 if st.button("🔊 استمع", key=f"aud_{i}"):
@@ -271,7 +254,7 @@ else:
                      aud = text_to_audio(msg["content"])
                      if aud: st.audio(aud, format='audio/mp3')
 
-    if prompt := st.chat_input("اسألني..."):
+    if prompt := st.chat_input("اسألني أو اطلب المزيد من الأسئلة..."):
         if not (st.session_state.pdf_images or st.session_state.text_content):
             st.warning("يرجى رفع ملف أو لصق نص أولاً!")
         else:
@@ -279,12 +262,33 @@ else:
             with st.chat_message("user"): st.markdown(prompt)
             with st.chat_message("assistant"):
                 with st.spinner("..."):
-                    chat_prompt = f"المستخدم: {st.session_state.student_name}. السؤال: {prompt}. (الأسلوب: {explanation_style})"
+                    # هنا التعديل المهم جداً: نجبره يفصل الحلول في كل مرة
+                    chat_instructions = f"""
+                    المستخدم: {st.session_state.student_name}
+                    السؤال: {prompt}
+                    الأسلوب: {explanation_style}
+                    
+                    🛑 تعليمات مهمة جداً:
+                    - إذا طلب المستخدم "أسئلة" أو "كويز" أو "امتحان": اكتب الأسئلة أولاً، ثم اكتب الكلمة الفاصلة "||SPLIT||"، ثم اكتب الإجابات الصحيحة بعدها.
+                    - إذا كان سؤالاً عادياً للشرح: جاوب بشكل طبيعي.
+                    """
+                    
                     if st.session_state.content_type == "image":
-                        resp = get_gemini_response(chat_prompt, st.session_state.pdf_images, is_images=True)
+                        resp = get_gemini_response(chat_instructions, st.session_state.pdf_images, is_images=True)
                     else:
-                        full_text_context = f"النص الأصلي: {st.session_state.text_content}\n\nالسؤال الجديد: {chat_prompt}"
+                        full_text_context = f"النص الأصلي: {st.session_state.text_content}\n\n{chat_instructions}"
                         resp = get_gemini_response(full_text_context, "", is_images=False)
-                    st.markdown(resp)
-            st.session_state.messages.append({"role": "assistant", "content": resp})
-            st.rerun()
+                    
+                    # التحقق من وجود الفاصل وعرض النتيجة
+                    if "||SPLIT||" in resp:
+                        parts = resp.split("||SPLIT||")
+                        st.markdown(parts[0])
+                        with st.expander("👁️ الحل"):
+                            st.info(parts[1])
+                        # حفظ الحالة بأنها مقسومة
+                        st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": True})
+                    else:
+                        st.markdown(resp)
+                        st.session_state.messages.append({"role": "assistant", "content": resp, "is_split": False})
+                        
+            # لا نحتاج rerun هنا لأننا عرضنا الرسالة يدوياً
