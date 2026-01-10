@@ -19,6 +19,18 @@ custom_css = """
     .stButton>button:hover { background-color: #e0e2e6; }
     a { color: #0066cc !important; text-decoration: none; }
     
+    /* --- كود الإخفاء (جديد) --- */
+    /* إخفاء زر Deploy والأيقونات العلوية */
+    .stDeployButton {display:none;}
+    header {visibility: hidden;}
+    
+    /* إخفاء فوتر Streamlit الرسمي */
+    footer {visibility: hidden;}
+    
+    /* إخفاء القائمة العلوية (اختياري - اذا ردت تخفي النقاط الثلاثة) */
+    /* #MainMenu {visibility: hidden;} */
+    
+    /* تنسيق العدادات */
     .break-timer {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
         background-color: rgba(0,0,0,0.9); color: white; padding: 50px;
@@ -43,33 +55,25 @@ if "pdf_images" not in st.session_state:
 if "study_end_time" not in st.session_state:
     st.session_state.study_end_time = None
 
-# --- إعداد المفتاح السري تلقائياً ---
+# جلب المفتاح من الأسرار
 try:
-    # محاولة جلب المفتاح من أسرار الموقع
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-    
-    # اختيار موديل Flash تلقائياً
     models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    # محاولة ذكية لإيجاد موديل فلاش
     selected_model_name = next((m for m in models if 'flash' in m), "models/gemini-1.5-flash")
-    
 except Exception as e:
-    st.error("⚠️ حدثت مشكلة في الاتصال بالمفتاح السري. يرجى التأكد من إعدادات الموقع.")
+    st.error("⚠️ يرجى التأكد من وضع المفتاح في Secrets.")
     api_key = None
     selected_model_name = None
 
-# --- 3. القائمة الجانبية (تم تبسيطها) ---
+# --- 3. القائمة الجانبية ---
 with st.sidebar:
     st.title("⚙️ الإعدادات")
-    
-    # تم إزالة خانة المفتاح لأننا أمناها بالسر
-    st.success(f"✅ الحالة: متصل (المعلم جاهز)")
+    st.success(f"✅ الحالة: متصل")
 
-    # --- المؤقت ---
+    # المؤقت
     st.markdown("---")
     st.subheader("⏱️ مؤقت التركيز")
-    
     now = datetime.now()
     active_study = False
     
@@ -108,7 +112,6 @@ with st.sidebar:
                 placeholder.empty()
                 st.success("ارجع للدراسة!")
 
-    # --- خيارات الشرح ---
     st.markdown("---")
     explanation_style = st.selectbox("أسلوب الشرح:", ("شرح مبسط (سوالف)", "أكاديمي", "رؤوس أقلام"))
 
@@ -117,6 +120,7 @@ with st.sidebar:
         st.session_state.pdf_images = None
         st.rerun()
 
+    # حقوق المطور (بدون روابط خارجية مزعجة)
     st.markdown("---")
     st.markdown("<div style='text-align: center; color: #666;'>Developed with ❤️ by<br><b>[اكتب اسمك هنا]</b></div>", unsafe_allow_html=True)
 
@@ -138,7 +142,7 @@ def get_gemini_response(prompt, images):
         response = model.generate_content(content)
         return response.text
     except Exception as e:
-        return f"عذراً، حدث خطأ في الاتصال (قد يكون بسبب الضغط على السيرفر): {e}"
+        return f"خطأ في الاتصال: {e}"
 
 def text_to_audio(text):
     try:
@@ -154,7 +158,7 @@ def text_to_audio(text):
 st.title("Study With Me 🎓")
 
 if not api_key:
-    st.error("⛔ لم يتم العثور على المفتاح السري! يرجى إضافته في إعدادات Streamlit.")
+    st.error("⛔ يرجى إضافة المفتاح في إعدادات Secrets.")
 else:
     uploaded_file = st.file_uploader("ارفع ملف الـ PDF", type="pdf")
 
