@@ -152,17 +152,40 @@ def pdf_to_images(file):
         return images
     except: return None
 
+# --- دالة الاتصال الذكية (مع ميزة الانتظار التلقائي) ---
 def get_gemini_response(prompt, content_data, is_images=True):
-    try:
-        model = genai.GenerativeModel(selected_model_name)
-        if is_images:
-            content = [prompt] + content_data
-        else:
-            content = [prompt + "\n\n" + content_data]
-        response = model.generate_content(content)
-        return response.text
-    except Exception as e: return f"حدث خطأ: {e}"
+    model = genai.GenerativeModel(selected_model_name)
+    
+    # تجهيز المحتوى
+    if is_images:
+        content = [prompt] + content_data
+    else:
+        content = [prompt + "\n\n" + content_data]
 
+    # محاولة الإرسال مع التكرار (Retry Logic)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(content)
+            return response.text
+        except Exception as e:
+            # إذا كان الخطأ هو "تجاوز الحد" (429)
+            if "429" in str(e) or "Quota exceeded" in str(e):
+                wait_time = 60 # ثانية
+                placeholder = st.empty()
+                
+                # عداد تنازلي لطيف
+                for i in range(wait_time, 0, -1):
+                    placeholder.warning(f"⏳ السيرفر مشغول (حساب مجاني). ننتظر {i} ثانية ونحاول مرة ثانية...", icon="☕")
+                    time.sleep(1)
+                
+                placeholder.empty() # اخفاء التحذير
+                # المحاولة مرة أخرى (Loop will continue)
+            else:
+                # إذا خطأ ثاني، رجعه فوراً
+                return f"حدث خطأ غير متوقع: {e}"
+    
+    return "❌ فشلت العملية بعد عدة محاولات. يرجى المحاولة لاحقاً."
 def text_to_audio(text):
     try:
         if not text or len(text.strip()) == 0: return None
@@ -434,3 +457,4 @@ else:
             st.rerun()
     else:
         st.info("💡 ارفع ملف لتبدأ...")
+
