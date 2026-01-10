@@ -10,8 +10,6 @@ import requests
 from streamlit_lottie import st_lottie
 from streamlit_mic_recorder import speech_to_text
 import json
-# مكتبة اليوتيوب الجديدة
-from youtube_transcript_api import YouTubeTranscriptApi
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="Study With Me", page_icon="🎓", layout="wide")
@@ -118,25 +116,6 @@ def create_html_report(messages, student_name):
             """
     html += "</div></body></html>"
     return html
-
-# دالة استخراج النص من اليوتيوب
-def get_youtube_transcript(video_url):
-    try:
-        # استخراج المعرف (ID)
-        video_id = ""
-        if "v=" in video_url:
-            video_id = video_url.split("v=")[1].split("&")[0]
-        elif "youtu.be" in video_url:
-            video_id = video_url.split("/")[-1]
-        
-        if not video_id:
-            return "❌ الرابط غير صحيح"
-            
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar', 'en'])
-        text = " ".join([i['text'] for i in transcript])
-        return text
-    except Exception as e:
-        return f"❌ لا يمكن جلب النص (قد لا يحتوي الفيديو على ترجمة): {e}"
 
 # --- 5. القائمة الجانبية ---
 with st.sidebar:
@@ -289,8 +268,7 @@ st.markdown("<h1>🎓 Study With Me <br><span style='font-size: 20px; color: #66
 if not api_key:
     st.warning("⚠️ الموقع بانتظار تفعيل المفتاح من المطور (Secrets).")
 else:
-    # التبويبات الثلاثة
-    tab1, tab2, tab3 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص", "📺 تلخيص يوتيوب"])
+    tab1, tab2 = st.tabs(["📄 رفع ملف (PDF)", "✍️ لصق نص"])
 
     with tab1:
         uploaded_file = st.file_uploader("اختر ملف PDF", type="pdf", key="pdf_uploader")
@@ -319,28 +297,6 @@ else:
                     resp = get_gemini_response(prompt, txt_input, is_images=False)
                     st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
                     st.rerun()
-
-    # --- تبويب اليوتيوب الجديد ---
-    with tab3:
-        st.info("💡 ملاحظة: يجب أن يحتوي الفيديو على شرح مكتوب (CC/Subtitle).")
-        yt_url = st.text_input("🔗 الصق رابط فيديو يوتيوب:")
-        if st.button("لخص الفيديو 📺"):
-            if yt_url:
-                if lottie_study: st_lottie(lottie_study, height=200, key="loading_yt")
-                with st.spinner("جاري سحب الكلام من الفيديو..."):
-                    transcript_text = get_youtube_transcript(yt_url)
-                    
-                    if "❌" in transcript_text:
-                        st.error(transcript_text)
-                    else:
-                        st.session_state.text_content = transcript_text
-                        st.session_state.pdf_images = None
-                        st.session_state.content_type = "text" # نعامله معاملة النص
-                        
-                        prompt = f"أنا {st.session_state.student_name}. هذا نص فيديو يوتيوب. اشرح لي أهم النقاط بأسلوب ({explanation_style}) وضع 3 أسئلة، ثم اكتب ||SPLIT|| ثم الحلول."
-                        resp = get_gemini_response(prompt, transcript_text, is_images=False)
-                        st.session_state.messages = [{"role": "assistant", "content": resp, "is_split": True}]
-                        st.rerun()
 
     # --- معالجة طلب البطاقات ---
     if "trigger_flashcards" in st.session_state and st.session_state.trigger_flashcards:
